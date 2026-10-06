@@ -1,4 +1,4 @@
-name: Sumy Synoptik — Manual Test
+name: Sumy Synoptik Manual Test
 
 on:
 workflow_dispatch:
@@ -6,16 +6,15 @@ workflow_dispatch:
 jobs:
 weather:
 runs-on: ubuntu-latest
+steps:
+- name: Download repository
+uses: actions/checkout@v4
 
 ```
-steps:
-  - name: Download repository
-    uses: actions/checkout@v4
-
   - name: Set up Python
     uses: actions/setup-python@v5
     with:
-      python-version: '3.13'
+      python-version: "3.13"
 
   - name: Publish weather forecast
     env:
