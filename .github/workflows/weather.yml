@@ -1,24 +1,22 @@
 name: Sumy Synoptik Manual Test
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
-weather:
-runs-on: ubuntu-latest
-steps:
-- name: Download repository
-uses: actions/checkout@v4
+  weather:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
 
-```
-  - name: Set up Python
-    uses: actions/setup-python@v5
-    with:
-      python-version: "3.13"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
 
-  - name: Publish weather forecast
-    env:
-      SUMY_BOT_TOKEN: ${{ secrets.SUMY_BOT_TOKEN }}
-      SUMY_CHANNEL: ${{ secrets.SUMY_CHANNEL }}
-    run: python weather_daily.py
-```
+      - name: Publish weather forecast
+        env:
+          SUMY_BOT_TOKEN: ${{ secrets.SUMY_BOT_TOKEN }}
+          SUMY_CHANNEL: ${{ secrets.SUMY_CHANNEL }}
+        run: python weather_daily.py
