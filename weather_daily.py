@@ -2,6 +2,7 @@ import urllib.request
 import urllib.parse
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from collections import Counter
 
 # ============================================================
@@ -157,7 +158,7 @@ wind_gusts = hourly["wind_gusts_10m"]
 # Беремо поточну дату та наступні 24 години
 # ------------------------------------------------------------
 
-now = datetime.now()
+now = datetime.now(ZoneInfo("Europe/Kyiv")).replace(tzinfo=None)
 
 current_date = now.strftime("%Y-%m-%d")
 current_hour = now.hour
