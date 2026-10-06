@@ -1,0 +1,47 @@
+name: Sumy Oblast Daily
+
+on:
+  schedule:
+    - cron: '0 6 * * *'    # 06:00 за київським часом
+      timezone: 'Europe/Kyiv'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Пробний запуск без публікації в Telegram'
+        type: boolean
+        default: false
+
+jobs:
+  oblast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install pillow
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-dejavu-core
+
+      - name: Publish oblast forecast
+        env:
+          WEATHERAPI_KEY: ${{ secrets.WEATHERAPI_KEY }}
+          SUMY_BOT_TOKEN: ${{ secrets.SUMY_BOT_TOKEN }}
+          SUMY_CHANNEL: ${{ secrets.SUMY_CHANNEL }}
+          DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '1' || '' }}
+        run: python oblast_daily.py
+
+      - name: Save preview image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oblast-forecast-image
+          path: oblast_forecast.png
+          if-no-files-found: ignore
+          retention-days: 3
