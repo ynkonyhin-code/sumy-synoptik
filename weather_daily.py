@@ -1,28 +1,73 @@
+import os
 import urllib.request
 import urllib.parse
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from collections import Counter
 
 # ============================================================
-# СУМСКОЙ СИНОПТИК — СУТОЧНЫЙ ПРОГНОЗ
+# СУМСЬКИЙ СИНОПТИК — ПРОГНОЗ ТРИЧІ НА ДОБУ
+#   07:00  morning — прогноз на поточну добу
+#   13:00  noon    — оновлення прогнозу
+#   19:00  evening — вечір + ніч + наступна доба
+# Режим береться зі змінної середовища MODE.
+# Якщо вона не задана — визначається за поточним часом.
 # ============================================================
 
 LATITUDE = 50.9077
 LONGITUDE = 34.7981
 TIMEZONE = "Europe/Kyiv"
 
-BOT_TOKEN = __import__("os").environ.get("SUMY_BOT_TOKEN")
-CHANNEL = __import__("os").environ.get("SUMY_CHANNEL")
+BOT_TOKEN = os.environ.get("SUMY_BOT_TOKEN")
+CHANNEL = os.environ.get("SUMY_CHANNEL")
 
 if not BOT_TOKEN or not CHANNEL:
-    print("ОШИБКА: не найдены переменные SUMY_BOT_TOKEN или SUMY_CHANNEL")
+    print("ПОМИЛКА: не знайдено змінні SUMY_BOT_TOKEN або SUMY_CHANNEL")
     raise SystemExit(1)
 
 
 # ------------------------------------------------------------
-# Описание погодных кодов Open-Meteo
+# Налаштування режимів
+# Блок: (зсув у днях, значок, назва, година початку, година кінця, секція)
+# Секція None — основна частина, "ЗАВТРА" — окремий розділ із заголовком
+# ------------------------------------------------------------
+
+MODES = {
+    "morning": {
+        "header": "🌅 <b>ДОБРОГО РАНКУ, СУМИ!</b>",
+        "title": "Прогноз на сьогодні, {d0}",
+        "blocks": [
+            (0, "🌅", "РАНОК", 6, 12, None),
+            (0, "☀️", "ДЕНЬ", 12, 18, None),
+            (0, "🌆", "ВЕЧІР", 18, 24, None),
+        ],
+    },
+    "noon": {
+        "header": "☀️ <b>ОНОВЛЕННЯ ПРОГНОЗУ</b>",
+        "title": "Що чекає на Суми далі, {d0}",
+        "blocks": [
+            (0, "☀️", "ДЕНЬ", 12, 18, None),
+            (0, "🌆", "ВЕЧІР", 18, 24, None),
+            (1, "🌙", "НІЧ", 0, 6, None),
+        ],
+    },
+    "evening": {
+        "header": "🌙 <b>ВЕЧІР, НІЧ ТА ЗАВТРА</b>",
+        "title": "Прогноз від {d0}",
+        "blocks": [
+            (0, "🌆", "ВЕЧІР", 18, 24, None),
+            (1, "🌙", "НІЧ", 0, 6, None),
+            (1, "🌅", "РАНОК", 6, 12, "ЗАВТРА"),
+            (1, "☀️", "ДЕНЬ", 12, 18, "ЗАВТРА"),
+            (1, "🌆", "ВЕЧІР", 18, 24, "ЗАВТРА"),
+        ],
+    },
+}
+
+
+# ------------------------------------------------------------
+# Опис погодних кодів Open-Meteo
 # ------------------------------------------------------------
 
 WEATHER_CODES = {
@@ -56,11 +101,6 @@ WEATHER_CODES = {
     99: "Гроза з сильним градом",
 }
 
-
-# ------------------------------------------------------------
-# Значки погоди
-# ------------------------------------------------------------
-
 WEATHER_ICONS = {
     "Ясно": "☀️",
     "Переважно ясно": "🌤",
@@ -81,7 +121,6 @@ WEATHER_ICONS = {
     "Короткочасний дощ": "🌦",
     "Злива": "🌧",
     "Сильна злива": "⛈",
-    "Крижаний дощ": "🌧",
     "Гроза": "⛈",
     "Гроза з градом": "⛈",
     "Гроза з сильним градом": "⛈",
@@ -101,11 +140,36 @@ def wind_direction(degrees):
         "Південний",
         "Південно-західний",
         "Західний",
-        "Північно-західний"
+        "Північно-західний",
     ]
-
     index = int((degrees + 22.5) / 45) % 8
     return directions[index]
+
+
+# ------------------------------------------------------------
+# Визначаємо режим
+# ------------------------------------------------------------
+
+now = datetime.now(ZoneInfo(TIMEZONE)).replace(tzinfo=None)
+
+mode = os.environ.get("MODE", "").strip().lower()
+
+if mode not in MODES:
+    if mode:
+        print(f"Невідомий режим '{mode}', визначаємо за часом.")
+    if now.hour < 10:
+        mode = "morning"
+    elif now.hour < 16:
+        mode = "noon"
+    else:
+        mode = "evening"
+
+config = MODES[mode]
+print(f"Режим: {mode} | Київський час: {now:%d.%m.%Y %H:%M}")
+
+# Відсікаємо години, що вже минули (до початку поточної години)
+cutoff = now.replace(minute=0, second=0, microsecond=0)
+
 
 # ------------------------------------------------------------
 # Запит до Open-Meteo
@@ -116,7 +180,7 @@ params = {
     "longitude": LONGITUDE,
     "timezone": TIMEZONE,
     "forecast_days": 2,
-
+    "wind_speed_unit": "ms",   # без цього Open-Meteo віддає км/год
     "hourly": ",".join([
         "temperature_2m",
         "apparent_temperature",
@@ -126,7 +190,7 @@ params = {
         "wind_speed_10m",
         "wind_direction_10m",
         "wind_gusts_10m",
-    ])
+    ]),
 }
 
 url = "https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode(params)
@@ -140,7 +204,6 @@ except Exception as e:
     print("Помилка отримання прогнозу:", e)
     raise SystemExit(1)
 
-
 hourly = data["hourly"]
 
 times = hourly["time"]
@@ -153,109 +216,72 @@ wind_speeds = hourly["wind_speed_10m"]
 wind_directions = hourly["wind_direction_10m"]
 wind_gusts = hourly["wind_gusts_10m"]
 
-
-# ------------------------------------------------------------
-# Беремо поточну дату та наступні 24 години
-# ------------------------------------------------------------
-
-now = datetime.now(ZoneInfo("Europe/Kyiv")).replace(tzinfo=None)
-
-current_date = now.strftime("%Y-%m-%d")
-current_hour = now.hour
-
-selected_indices = []
-
-for i, t in enumerate(times):
-    dt = datetime.fromisoformat(t)
-
-    if dt >= now:
-        selected_indices.append(i)
-
-    if len(selected_indices) >= 24:
-        break
-
-
-if not selected_indices:
-    print("Не вдалося знайти майбутні години прогнозу.")
-    raise SystemExit(1)
+parsed_times = [datetime.fromisoformat(t) for t in times]
 
 
 # ------------------------------------------------------------
-# Визначаємо блоки доби
+# Допоміжні функції
 # ------------------------------------------------------------
 
-periods = [
-    ("🌅", "РАНОК", 6, 12),
-    ("☀️", "ДЕНЬ", 12, 18),
-    ("🌆", "ВЕЧІР", 18, 24),
-    ("🌙", "НІЧ", 0, 6),
-]
+def clean(values):
+    """Прибирає None (Open-Meteo іноді віддає порожні значення)."""
+    return [v for v in values if v is not None]
 
 
-def get_period(hour):
-    if 6 <= hour < 12:
-        return 0
-    elif 12 <= hour < 18:
-        return 1
-    elif 18 <= hour < 24:
-        return 2
-    else:
-        return 3
+def select_indices(day_offset, start_hour, end_hour):
+    target_date = (now + timedelta(days=day_offset)).date()
+    result = []
+    for i, dt in enumerate(parsed_times):
+        if dt.date() != target_date:
+            continue
+        if not (start_hour <= dt.hour < end_hour):
+            continue
+        if dt < cutoff:
+            continue
+        result.append(i)
+    return result
 
-
-# ------------------------------------------------------------
-# Формування блока прогнозу
-# ------------------------------------------------------------
 
 def make_period(indices, icon, name, start_hour, end_hour):
-
     if not indices:
         return None
 
-    temps = [temperatures[i] for i in indices]
-    feels_period = [feels[i] for i in indices]
-    rain_prob = [precip_probability[i] for i in indices]
-    rain_amount = [precipitation[i] for i in indices]
-    codes = [weather_codes[i] for i in indices]
-    wind = [wind_speeds[i] for i in indices]
-    gusts = [wind_gusts[i] for i in indices]
-    wind_dirs = [wind_directions[i] for i in indices]
+    temps = clean(temperatures[i] for i in indices)
+    feels_period = clean(feels[i] for i in indices)
+    rain_prob = clean(precip_probability[i] for i in indices)
+    rain_amount = clean(precipitation[i] for i in indices)
+    codes = clean(weather_codes[i] for i in indices)
+    wind = clean(wind_speeds[i] for i in indices)
+    gusts = clean(wind_gusts[i] for i in indices)
+    wind_dirs = clean(wind_directions[i] for i in indices)
 
-    # Температура
+    if not (temps and feels_period and codes and wind and wind_dirs):
+        return None
+
+    # Якщо блок почався вже після своєї номінальної години — показуємо реальний початок
+    first_hour = parsed_times[indices[0]].hour
+    shown_start = max(start_hour, first_hour)
+
     temp_min = round(min(temps))
     temp_max = round(max(temps))
-
     feels_min = round(min(feels_period))
     feels_max = round(max(feels_period))
 
-    # Опади
-    rain_probability = max(rain_prob)
-    rain_total = sum(rain_amount)
+    rain_probability = max(rain_prob) if rain_prob else 0
+    rain_total = sum(rain_amount) if rain_amount else 0
 
-    # Найбільш характерна погода
     most_common_code = Counter(codes).most_common(1)[0][0]
-    weather = WEATHER_CODES.get(
-        most_common_code,
-        "Змінна погода"
-    )
-
+    weather = WEATHER_CODES.get(most_common_code, "Змінна погода")
     weather_icon = WEATHER_ICONS.get(weather, "🌦")
 
-    # Вітер
     wind_min = round(min(wind))
     wind_max = round(max(wind))
-    gust_max = round(max(gusts))
-
-    # Найчастіший напрямок
-    direction_names = [
-        wind_direction(d) for d in wind_dirs
-    ]
+    gust_max = round(max(gusts)) if gusts else wind_max
 
     common_direction = Counter(
-        direction_names
+        wind_direction(d) for d in wind_dirs
     ).most_common(1)[0][0]
 
-    # Формат температури
     if temp_min == temp_max:
         temp_text = f"{temp_min:+d}°C"
     else:
@@ -266,101 +292,77 @@ def make_period(indices, icon, name, start_hour, end_hour):
     else:
         feels_text = f"{feels_min:+d}…{feels_max:+d}°C"
 
-    # Формат опадів
     if rain_probability == 0:
         precipitation_text = "Опади малоймовірні"
     else:
         precipitation_text = f"Ймовірність опадів до {rain_probability}%"
-
         if rain_total >= 0.1:
             precipitation_text += f" · {rain_total:.1f} мм"
 
-    # Формат вітру
     if wind_min == wind_max:
         wind_text = f"{common_direction}, {wind_min} м/с"
     else:
-        wind_text = (
-            f"{common_direction}, "
-            f"{wind_min}–{wind_max} м/с"
-        )
+        wind_text = f"{common_direction}, {wind_min}–{wind_max} м/с"
 
     if gust_max > wind_max:
         wind_text += f" · пориви до {gust_max} м/с"
 
-    text = (
+    return (
         f"{icon} <b>{name}</b> · "
-        f"{start_hour:02d}:00–{end_hour:02d}:00\n"
+        f"{shown_start:02d}:00–{end_hour:02d}:00\n"
         f"🌡 {temp_text} · відчувається {feels_text}\n"
         f"{weather_icon} {weather}\n"
         f"🌧 {precipitation_text}\n"
         f"💨 {wind_text}\n"
     )
 
-    return text
-
-
-# ------------------------------------------------------------
-# Розподіляємо години по чотирьох періодах
-# ------------------------------------------------------------
-
-period_indices = {
-    0: [],
-    1: [],
-    2: [],
-    3: [],
-}
-
-for i in selected_indices:
-    dt = datetime.fromisoformat(times[i])
-    period_number = get_period(dt.hour)
-    period_indices[period_number].append(i)
-
 
 # ------------------------------------------------------------
 # Формуємо повідомлення
 # ------------------------------------------------------------
 
-forecast_dates = []
+today_text = now.strftime("%d.%m.%Y")
+tomorrow_text = (now + timedelta(days=1)).strftime("%d.%m.%Y")
 
-for i in selected_indices:
-    dt = datetime.fromisoformat(times[i])
-    date_text = dt.strftime("%d.%m.%Y")
-
-    if date_text not in forecast_dates:
-        forecast_dates.append(date_text)
-
-if len(forecast_dates) == 1:
-    date_header = forecast_dates[0]
+if mode == "evening":
+    d0 = f"{now:%H}:00, {today_text}"
 else:
-    date_header = f"{forecast_dates[0]} – {forecast_dates[-1]}"
-
+    d0 = today_text
 
 message = (
     "🇺🇦 <b>СУМСЬКИЙ СИНОПТИК</b>\n"
-    f"🌦 <b>Прогноз на {date_header}</b>\n"
+    f"{config['header']}\n"
+    f"🌦 <b>{config['title'].format(d0=d0)}</b>\n"
     "📍 Суми\n\n"
 )
-for number, period in enumerate(periods):
 
-    icon, name, start_hour, end_hour = period
+blocks_added = 0
+current_section = None
 
-    block = make_period(
-        period_indices[number],
-        icon,
-        name,
-        start_hour,
-        end_hour
-    )
+for day_offset, icon, name, start_hour, end_hour, section in config["blocks"]:
+    indices = select_indices(day_offset, start_hour, end_hour)
+    block = make_period(indices, icon, name, start_hour, end_hour)
 
-    if block:
-        message += block + "\n"
+    if not block:
+        continue
 
+    if section != current_section:
+        current_section = section
+        if section:
+            message += f"━━━ <b>📅 {section}, {tomorrow_text}</b> ━━━\n\n"
+
+    message += block + "\n"
+    blocks_added += 1
+
+if blocks_added == 0:
+    print("Не вдалося знайти майбутні години прогнозу.")
+    raise SystemExit(1)
 
 message += (
     "━━━━━━━━━━━━━━━━━━\n"
     "📍 Суми\n"
     "🕒 Дані Open-Meteo\n"
-    "🔄 Прогноз оновлюється регулярно"
+    "🔄 Прогноз оновлюється тричі на добу: 07:00, 13:00, 19:00"
 )
 
 
@@ -368,9 +370,7 @@ message += (
 # Надсилання в Telegram
 # ------------------------------------------------------------
 
-telegram_url = (
-    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-)
+telegram_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 payload = {
     "chat_id": CHANNEL,
@@ -381,7 +381,7 @@ payload = {
 
 encoded = urllib.parse.urlencode(payload).encode("utf-8")
 
-print("Формуємо добовий прогноз...")
+print("Формуємо прогноз...")
 print(f"Довжина повідомлення: {len(message)} символів")
 print("Надсилаємо прогноз у Telegram...")
 
@@ -389,25 +389,24 @@ try:
     request = urllib.request.Request(
         telegram_url,
         data=encoded,
-        method="POST"
+        method="POST",
     )
-
     with urllib.request.urlopen(request, timeout=20) as response:
         result = json.loads(response.read().decode("utf-8"))
-
 except Exception as e:
     print("ПОМИЛКА TELEGRAM:", e)
     raise SystemExit(1)
 
-
 if result.get("ok"):
     print()
     print("=" * 40)
-    print("  ДОБОВИЙ ПРОГНОЗ УСПІШНО ОПУБЛІКОВАНО!")
+    print("  ПРОГНОЗ УСПІШНО ОПУБЛІКОВАНО!")
     print("=" * 40)
     print()
+    print(f"Режим: {mode}")
     print(f"Канал: {CHANNEL}")
 else:
     print()
     print("Telegram повернув помилку:")
     print(result)
+    raise SystemExit(1)
