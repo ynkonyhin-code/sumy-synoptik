@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0;
+      font-family: 'Inter', 'Segoe UI', Roboto, 'Noto Sans', 'DejaVu Sans', sans-serif; }
+  body {
+    width: 1080px; min-height: 1350px;
+    background: linear-gradient(160deg, #0b1220 0%, #16233b 100%);
+    color: #f8fafc; padding: 52px 56px 44px;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 30px;
+  }
+
+  /* Шапка */
+  .header { display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 3px solid #2b3d5c; padding-bottom: 26px; }
+  .header h1 { font-size: 50px; font-weight: 800; color: #38bdf8; line-height: 1.1; }
+  .header p  { font-size: 26px; color: #9fb0c8; margin-top: 8px; }
+  .date-badge { background: #0b1220; border: 2px solid #38bdf8; color: #38bdf8;
+                padding: 12px 26px; border-radius: 40px; font-weight: 700; font-size: 30px; }
+
+  /* Заголовки секций */
+  .section-title { font-size: 30px; font-weight: 700; color: #e2e8f0; margin-bottom: 14px;
+                   display: flex; justify-content: space-between; align-items: baseline; }
+  .section-title small { font-size: 23px; font-weight: 500; color: #9fb0c8; }
+
+  /* Таблицы */
+  .table-box { background: rgba(30, 41, 59, 0.75); border: 2px solid #2b3d5c;
+               border-radius: 22px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #0b1220; color: #9fb0c8; font-size: 23px; font-weight: 600;
+       padding: 14px 22px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 16px 22px; border-top: 2px solid #2b3d5c; font-size: 34px;
+       font-weight: 700; text-align: right; white-space: nowrap; }
+  td:first-child { font-size: 31px; color: #f1f5f9; }
+
+  .cur td:not(:first-child) { color: #4ade80; }
+  .delta { display: block; font-size: 21px; font-weight: 600; margin-top: 2px; }
+  .delta.up   { color: #f87171; }   /* вырос курс - валюта дороже */
+  .delta.down { color: #4ade80; }
+  .delta.flat { color: #9fb0c8; }
+
+  .fuel td:not(:first-child) { color: #fbbf24; }
+  .fuel td.best { color: #4ade80; background: rgba(74, 222, 128, 0.12); }
+
+  .legend { font-size: 22px; color: #9fb0c8; margin-top: 12px; }
+  .legend b { color: #4ade80; }
+
+  /* Подвал */
+  .footer { border-top: 2px solid #2b3d5c; padding-top: 18px; display: flex;
+            justify-content: space-between; align-items: center; font-size: 22px; color: #7e8fa8; }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>Фінанси та пальне</h1>
+      <p>Суми та Сумська область</p>
+    </div>
+    <div class="date-badge">{{ date_str }}</div>
+  </div>
+
+  <div>
+    <div class="section-title">💵 Курси валют <small>банки: купівля / продаж, грн</small></div>
+    <div class="table-box">
+      <table class="cur">
+        <thead><tr><th>Джерело</th><th>USD</th><th>EUR</th></tr></thead>
+        <tbody>
+        {% for bank in currency_data %}
+          <tr>
+            <td>{{ bank.name }}</td>
+            <td>{{ bank.usd }}{% if bank.usd_d %}<span class="delta {{ bank.usd_d.dir }}">{{ bank.usd_d.arrow }} {{ bank.usd_d.text }}</span>{% endif %}</td>
+            <td>{{ bank.eur }}{% if bank.eur_d %}<span class="delta {{ bank.eur_d.dir }}">{{ bank.eur_d.arrow }} {{ bank.eur_d.text }}</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">⛽ Ціни на АЗС, грн/л <small>станом на {{ fuel_date }}</small></div>
+    <div class="table-box">
+      <table class="fuel">
+        <thead><tr><th>Мережа</th><th>А-95</th><th>ДП</th><th>Газ</th></tr></thead>
+        <tbody>
+        {% for s in fuel_data %}
+          <tr>
+            <td>{{ s.name }}</td>
+            <td class="{{ 'best' if s.a95_best }}">{{ s.a95_s }}</td>
+            <td class="{{ 'best' if s.dp_best }}">{{ s.dp_s }}</td>
+            <td class="{{ 'best' if s.gas_best }}">{{ s.gas_s }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="legend"><b>Зелений</b> — найнижча ціна серед мереж</div>
+  </div>
+
+  <div class="footer">
+    <span>Курс НБУ: ▲▼ — зміна до вчора</span>
+    <span>{{ channel }}</span>
+  </div>
+
+</body>
+</html>
