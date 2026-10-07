@@ -1,1 +1,45 @@
+name: Daily Currency & Fuel Post
 
+on:
+  schedule:
+    # Запуск каждый день в 06:00 UTC (соответствует 08:00 по Киевскому времени зимой/осенью)
+    - cron: '0 6 * * *'
+  
+  # Кнопка для ручного тестирования из интерфейса GitHub!
+  workflow_dispatch:
+
+jobs:
+  publish-daily-post:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Скачиваем файлы репозитория на виртуальный сервер
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # 2. Устанавливаем Python
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    # 3. Устанавливаем библиотеки Python
+    - name: Install Python Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 4. Устанавливаем браузер Chromium для Playwright (для создания скриншота HTML)
+    - name: Install Playwright Browsers
+      run: |
+        playwright install chromium
+        playwright install-deps
+
+    # 5. Запускаем наш Python-скрипт с передачей секретов
+    - name: Run Main Script
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python main.py
