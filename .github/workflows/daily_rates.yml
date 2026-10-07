@@ -2,11 +2,7 @@ name: Daily Currency & Fuel Post
 
 on:
   schedule:
-    # Запуск каждый день в 05:00 UTC (соответствует 08:00 по Киевскому времени в период летнего времени)
-    # Зимой (с конца октября) для 08:00 по Киеву нужно менять на '0 6 * * *'
     - cron: '0 5 * * *'
-  
-  # Кнопка для ручного запуска и проверки во вкладке Actions в любое время
   workflow_dispatch:
 
 jobs:
@@ -14,30 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Скачиваем файлы проекта из репозитория
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # 2. Настраиваем окружение Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
 
-    # 3. Устанавливаем библиотеки из requirements.txt
     - name: Install Python Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # 4. Устанавливаем браузер Chromium для Playwright (отрисовка HTML в PNG)
     - name: Install Playwright Browsers
       run: |
         playwright install chromium
         playwright install-deps
 
-    # 5. Запускаем наш скрипт с подтягиванием секретов Telegram
     - name: Run Rates Publisher Script
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
