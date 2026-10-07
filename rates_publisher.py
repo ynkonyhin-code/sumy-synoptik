@@ -10,7 +10,7 @@ from jinja2 import Template
 from playwright.sync_api import sync_playwright
 
 TZ = ZoneInfo("Europe/Kyiv")
-CHANNEL_LINK = "t.me/your_channel"   # <- впишите сюда адрес своего канала (или оставьте "" чтобы скрыть)
+CHANNEL_LINK = "t.me/sumskoy_sinoptik"   # <- впишите сюда адрес своего канала (или оставьте "" чтобы скрыть)
 FUEL_FILE = "fuel_prices.json"
 FUEL_URL = "https://outsignal.com/energy/azs/sumy/"   # цены на АЗС Сумской области (обновляются ежедневно)
 FUEL_MAX_AGE_DAYS = 3                # через сколько дней цены на топливо считаются устаревшими
