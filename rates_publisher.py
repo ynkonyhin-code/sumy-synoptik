@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 # --- 1. СБОР И ПОДГОТОВКА ДАННЫХ ---
 
 def get_currency_data():
-    """Сбор курсов валют от НБУ, ПриватБанка и Monobank"""
+    """Сбор курсов валют от НБУ, ПриватБанка, Monobank и Ощадбанка"""
     currency_list = []
 
     # 1. НБУ
@@ -33,17 +33,26 @@ def get_currency_data():
         eur_str = f"{float(eur_item['buy']):.2f} / {float(eur_item['sale']):.2f}" if eur_item else "—"
         currency_list.append({"name": "ПриватБанк", "usd": usd_str, "eur": eur_str})
     except Exception as e:
+        print(f"Ошибка ПриватБанка: {e}")
         currency_list.append({"name": "ПриватБанк", "usd": "41.10 / 41.70", "eur": "44.50 / 45.30"})
 
     # 3. Monobank
     try:
-        r = requests.get("https://api.monobank.ua/bank/currency", headers={"User-Agent": "Bot/1.0"}, timeout=10).json()
-        usd_item = next((i for i in r if i.get('currencyCodeA') == 840 and i.get('currencyCodeB') == 980), None)
-        eur_item = next((i for i in r if i.get('currencyCodeA') == 978 and i.get('currencyCodeB') == 980), None)
-        usd_str = f"{usd_item['rateBuy']:.2f} / {usd_item['rateSell']:.2f}" if usd_item else "—"
-        eur_str = f"{eur_item['rateBuy']:.2f} / {eur_item['rateSell']:.2f}" if eur_item else "—"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        r = requests.get("https://api.monobank.ua/bank/currency", headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            usd_item = next((i for i in data if i.get('currencyCodeA') == 840 and i.get('currencyCodeB') == 980), None)
+            eur_item = next((i for i in data if i.get('currencyCodeA') == 978 and i.get('currencyCodeB') == 980), None)
+            usd_str = f"{usd_item['rateBuy']:.2f} / {usd_item['rateSell']:.2f}" if usd_item and 'rateBuy' in usd_item else "41.15 / 41.65"
+            eur_str = f"{eur_item['rateBuy']:.2f} / {eur_item['rateSell']:.2f}" if eur_item and 'rateBuy' in eur_item else "44.60 / 45.25"
+        else:
+            usd_str, eur_str = "41.15 / 41.65", "44.60 / 45.25"
         currency_list.append({"name": "Monobank", "usd": usd_str, "eur": eur_str})
     except Exception as e:
+        print(f"Ошибка Monobank: {e}")
         currency_list.append({"name": "Monobank", "usd": "41.15 / 41.65", "eur": "44.60 / 45.25"})
 
     # 4. Ощадбанк (Ориентир)
@@ -66,7 +75,7 @@ def get_fuel_data():
 # --- 2. ГЕНЕРАЦИЯ КАРТИНКИ ИЗ HTML ---
 
 def generate_image(currency_data, fuel_data, date_str):
-    """Заполнение шаблона HTML и создание скриншота PNG через Playwright"""
+    """Заполнение шаблона HTML и рендеринг картинки card.png через Playwright"""
     with open("template.html", "r", encoding="utf-8") as f:
         html_content = f.read()
 
@@ -77,13 +86,18 @@ def generate_image(currency_data, fuel_data, date_str):
         fuel_data=fuel_data
     )
 
-    with open("rendered.html", "w", encoding="utf-8") as f:
+    file_path = os.path.abspath("rendered.html")
+    with open(file_path, "w", encoding="utf-8") as f:
         f.write(rendered_html)
 
+    # Запуск Playwright с безопасными флагами для GitHub Actions
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
         page = browser.new_page(viewport={"width": 800, "height": 800})
-        page.goto(f"file://{os.path.abspath('rendered.html')}")
+        page.goto(f"file://{file_path}", wait_until="load")
         page.screenshot(path="card.png")
         browser.close()
 
@@ -94,8 +108,7 @@ def send_to_telegram(photo_path, caption_text):
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
     if not bot_token or not chat_id:
-        print("Ошибка: Секреты TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не найдены!")
-        return
+        raise ValueError("Ошибка: Секреты TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не найдены в окружении!")
 
     url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
 
@@ -106,12 +119,13 @@ def send_to_telegram(photo_path, caption_text):
             "parse_mode": "HTML"
         }
         files = {"photo": photo}
-        response = requests.post(url, data=payload, files=files)
+        response = requests.post(url, data=payload, files=files, timeout=30)
         
     if response.status_code == 200:
         print("Успешно отправлено в Telegram!")
     else:
         print(f"Ошибка отправки: {response.status_code}, {response.text}")
+        response.raise_for_status()
 
 # --- 4. ОСНОВНОЙ ЗАПУСК ---
 
@@ -119,7 +133,7 @@ if __name__ == "__main__":
     today = datetime.datetime.now()
     date_str = today.strftime("%d.%m.%Y")
 
-    print("Собираем данные...")
+    print(f"[{date_str}] Собираем данные...")
     currencies = get_currency_data()
     fuels = get_fuel_data()
 
