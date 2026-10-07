@@ -4,20 +4,15 @@ import requests
 from jinja2 import Template
 from playwright.sync_api import sync_playwright
 
-# ==========================================
-# 1. СБОР И ПОДГОТОВКА ДАННЫХ
-# ==========================================
+# --- 1. СБОР И ПОДГОТОВКА ДАННЫХ ---
 
 def get_currency_data():
-    """Сбор курсов валют от НБУ, ПриватБанка, Monobank и Ощадбанка"""
+    """Сбор курсов валют от НБУ, ПриватБанка и Monobank"""
     currency_list = []
 
-    # 1. НБУ (Официальный курс)
+    # 1. НБУ
     try:
-        r = requests.get(
-            "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json",
-            timeout=10
-        ).json()
+        r = requests.get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json", timeout=10).json()
         usd = next((item['rate'] for item in r if item['cc'] == 'USD'), None)
         eur = next((item['rate'] for item in r if item['cc'] == 'EUR'), None)
         currency_list.append({
@@ -29,45 +24,36 @@ def get_currency_data():
         print(f"Ошибка НБУ: {e}")
         currency_list.append({"name": "Нацбанк (НБУ)", "usd": "41.30 грн", "eur": "44.80 грн"})
 
-    # 2. ПриватБанк (Наличный курс)
+    # 2. ПриватБанк
     try:
-        r = requests.get(
-            "https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5",
-            timeout=10
-        ).json()
+        r = requests.get("https://api.privatbank.ua/p24api/pubinfo?json&exchange&coursid=5", timeout=10).json()
         usd_item = next((i for i in r if i['ccy'] == 'USD'), None)
         eur_item = next((i for i in r if i['ccy'] == 'EUR'), None)
         usd_str = f"{float(usd_item['buy']):.2f} / {float(usd_item['sale']):.2f}" if usd_item else "—"
         eur_str = f"{float(eur_item['buy']):.2f} / {float(eur_item['sale']):.2f}" if eur_item else "—"
         currency_list.append({"name": "ПриватБанк", "usd": usd_str, "eur": eur_str})
     except Exception as e:
-        print(f"Ошибка ПриватБанк: {e}")
         currency_list.append({"name": "ПриватБанк", "usd": "41.10 / 41.70", "eur": "44.50 / 45.30"})
 
-    # 3. Monobank (Карточный/наличный)
+    # 3. Monobank
     try:
-        r = requests.get(
-            "https://api.monobank.ua/bank/currency",
-            headers={"User-Agent": "Bot/1.0"},
-            timeout=10
-        ).json()
+        r = requests.get("https://api.monobank.ua/bank/currency", headers={"User-Agent": "Bot/1.0"}, timeout=10).json()
         usd_item = next((i for i in r if i.get('currencyCodeA') == 840 and i.get('currencyCodeB') == 980), None)
         eur_item = next((i for i in r if i.get('currencyCodeA') == 978 and i.get('currencyCodeB') == 980), None)
         usd_str = f"{usd_item['rateBuy']:.2f} / {usd_item['rateSell']:.2f}" if usd_item else "—"
         eur_str = f"{eur_item['rateBuy']:.2f} / {eur_item['rateSell']:.2f}" if eur_item else "—"
         currency_list.append({"name": "Monobank", "usd": usd_str, "eur": eur_str})
     except Exception as e:
-        print(f"Ошибка Monobank: {e}")
         currency_list.append({"name": "Monobank", "usd": "41.15 / 41.65", "eur": "44.60 / 45.25"})
 
-    # 4. Ощадбанк (Рыночный ориентир)
+    # 4. Ощадбанк (Ориентир)
     currency_list.append({"name": "Ощадбанк", "usd": "41.20 / 41.80", "eur": "44.70 / 45.40"})
 
     return currency_list
 
 
 def get_fuel_data():
-    """Данные по основным АЗС в Сумах и Сумской области (6 сетей)"""
+    """Данные по АЗС в Сумах и Сумской области"""
     return [
         {"name": "ОККО", "a95": "57.99", "dp": "56.99", "gas": "35.49"},
         {"name": "WOG", "a95": "57.99", "dp": "56.99", "gas": "35.49"},
@@ -77,18 +63,13 @@ def get_fuel_data():
         {"name": "Shell", "a95": "56.99", "dp": "55.99", "gas": "34.99"}
     ]
 
-
-# ==========================================
-# 2. ГЕНЕРАЦИЯ КАРТИНКИ ИЗ HTML
-# ==========================================
+# --- 2. ГЕНЕРАЦИЯ КАРТИНКИ ИЗ HTML ---
 
 def generate_image(currency_data, fuel_data, date_str):
-    """Заполнение шаблона HTML и рендеринг снимок-картинки card.png"""
-    # Считываем шаблон HTML
+    """Заполнение шаблона HTML и создание скриншота PNG через Playwright"""
     with open("template.html", "r", encoding="utf-8") as f:
         html_content = f.read()
 
-    # Подставляем переменные через Jinja2
     template = Template(html_content)
     rendered_html = template.render(
         date_str=date_str,
@@ -96,11 +77,9 @@ def generate_image(currency_data, fuel_data, date_str):
         fuel_data=fuel_data
     )
 
-    # Сохраняем временный файл HTML
     with open("rendered.html", "w", encoding="utf-8") as f:
         f.write(rendered_html)
 
-    # Делаем скриншот с помощью Playwright
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": 800, "height": 800})
@@ -108,13 +87,9 @@ def generate_image(currency_data, fuel_data, date_str):
         page.screenshot(path="card.png")
         browser.close()
 
-
-# ==========================================
-# 3. ОТПРАВКА В TELEGRAM
-# ==========================================
+# --- 3. ОТПРАВКА В TELEGRAM ---
 
 def send_to_telegram(photo_path, caption_text):
-    """Отправка изображения с подписью в Telegram-канал"""
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -132,29 +107,25 @@ def send_to_telegram(photo_path, caption_text):
         }
         files = {"photo": photo}
         response = requests.post(url, data=payload, files=files)
-
+        
     if response.status_code == 200:
-        print(" Успешно отправлено в Telegram!")
+        print("Успешно отправлено в Telegram!")
     else:
         print(f"Ошибка отправки: {response.status_code}, {response.text}")
 
-
-# ==========================================
-# 4. ОСНОВНОЙ ТОЧКА ВХОДА
-# ==========================================
+# --- 4. ОСНОВНОЙ ЗАПУСК ---
 
 if __name__ == "__main__":
     today = datetime.datetime.now()
     date_str = today.strftime("%d.%m.%Y")
 
-    print(f"[{date_str}] Сбор данных валют и топлива...")
+    print("Собираем данные...")
     currencies = get_currency_data()
     fuels = get_fuel_data()
 
-    print("Генерация карточки PNG из template.html...")
+    print("Генерируем картинку...")
     generate_image(currencies, fuels, date_str)
 
-    # Формируем текст сообщения
     caption = (
         f"<b>📊 Фінансовий та паливний огляд у Сумах на {date_str}</b>\n\n"
         f"<b>💵 Валютний ринок:</b>\n"
@@ -167,5 +138,5 @@ if __name__ == "__main__":
         f"#Суми #КурсВалют #ПальнеСуми #Економіка"
     )
 
-    print("Отправка в Telegram-канал...")
+    print("Отправляем в Telegram...")
     send_to_telegram("card.png", caption)
