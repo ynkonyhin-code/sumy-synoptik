@@ -1,0 +1,51 @@
+name: Sumy Alarm Monitor
+
+on:
+  schedule:
+    # Запуск каждые 30 минут. Каждый запуск работает ~50 минут и проверяет канал каждые 2 минуты,
+    # а следующий ждёт в очереди (concurrency) и подхватывает работу без пауз.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:       # ручной запуск: останавливает текущий цикл и сразу запускает новый
+
+concurrency:
+  group: alarm-monitor
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      contents: write      # нужно, чтобы сохранять alarm_state.json в репозиторий
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run Alarm Monitor (loop, every 2 minutes)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.LIGHT_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LOOP_MINUTES: '50'
+          POLL_SECONDS: '120'
+          COMMIT_STATE: '1'
+        run: python alarm_checker.py
+
+      - name: Save state (fallback)
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add alarm_state.json || true
+          git commit -m "Update alarm state" || true
+          git pull --rebase || true
+          git push || true
