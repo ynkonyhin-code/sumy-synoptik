@@ -1,0 +1,42 @@
+name: Hrafik vidklyuchen Sumyoblenerho
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Тільки показати в логу, нічого не публікувати"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hrafik-vidklyuchen-sumyoblenerho
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: hrafik_vidklyuchen_sumyoblenerho_requirements.txt
+      - run: pip install -r hrafik_vidklyuchen_sumyoblenerho_requirements.txt
+      - name: Run
+        run: python hrafik_vidklyuchen_sumyoblenerho.py ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+      - name: Save state
+        run: |
+          git config user.name "hrafik-bot"
+          git config user.email "hrafik-bot@users.noreply.github.com"
+          git add hrafik_vidklyuchen_sumyoblenerho_state.json || true
+          git diff --cached --quiet || (git commit -m "state" && git push)
