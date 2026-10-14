@@ -1,0 +1,39 @@
+name: dsns_sumy
+
+on:
+  schedule:
+    - cron: "30 */3 * * *"   # каждые 3 часа (UTC), со сдвигом 30 минут
+  workflow_dispatch:          # ручной запуск
+
+permissions:
+  contents: write             # нужно, чтобы сохранять список опубликованных постов
+
+concurrency:
+  group: repo-state-commits   # общая очередь, чтобы запуски не конфликтовали при push
+  cancel-in-progress: false
+
+jobs:
+  repost:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run script
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python dsns_sumy.py
+
+      - name: Save posted IDs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dsns_sumy_posted.txt
+          git diff --staged --quiet || (git commit -m "Update posted IDs (dsns_sumy)" && git pull --rebase && git push)
