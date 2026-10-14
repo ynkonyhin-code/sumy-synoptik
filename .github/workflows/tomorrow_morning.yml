@@ -1,38 +1,79 @@
-name: Tomorrow.io three-day morning forecast
+name: Tomorrow.io morning forecast
 
 on:
   schedule:
-    # GitHub cron uses UTC. Run in both possible Kyiv UTC offsets:
-    # 04:05 UTC = 07:05 Kyiv in summer; 05:05 UTC = 07:05 Kyiv in winter.
-    # The script sends only when the Kyiv local hour is 07.
+    # 07:00 по Киеву: летом (UTC+3) = 04:xx UTC, зимой (UTC+2) = 05:xx UTC.
+    # Запускаем в оба слота, лишний отсекает шаг "gate" (смотрит на реальный киевский час).
+    # Минуты :05 — чтобы не попадать в «пробку» на круглых часах.
     - cron: "5 4 * * *"
     - cron: "5 5 * * *"
+
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Только собрать картинки (скачать из Artifacts), в канал НЕ публиковать"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: write      # нужно только для шага keepalive
 
 concurrency:
-  group: tomorrow-3day-morning
+  group: tomorrow-morning
   cancel-in-progress: false
 
 jobs:
   send:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    timeout-minutes: 8
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+    steps:
+      - name: Gate - чи зараз 07:00 за Києвом
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          hour=$((10#$(TZ=Europe/Kyiv date +%H)))
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$hour" = "7" ]; then run=true; else run=false; fi
+          echo "Київська година: $hour | подія: $EVENT | run=$run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Keepalive - не даємо GitHub вимкнути розклад (best-effort)
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow enable tomorrow_morning.yml
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: python -m pip install requests matplotlib
+      - name: Install dependencies (requests + Pillow + шрифт з кирилицею)
+        if: steps.gate.outputs.run == 'true'
+        run: pip install requests pillow matplotlib
 
-      - name: Send three-day forecast
+      - name: Send forecast
+        if: steps.gate.outputs.run == 'true'
         env:
           TOMORROW_API_KEY: ${{ secrets.TOMORROW_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FORCE: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
-        run: python -u tomorrow_morning.py
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: python tomorrow_morning.py
+
+      - name: Save preview images (dry run)
+        if: steps.gate.outputs.run == 'true' && inputs.dry_run
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast-preview
+          path: |
+            forecast_3days.png
+            forecast_oblast.png
