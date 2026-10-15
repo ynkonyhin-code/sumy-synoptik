@@ -1,0 +1,34 @@
+name: Space weather alert
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # каждые 30 минут (время UTC)
+  workflow_dispatch:          # кнопка ручного запуска
+
+permissions:
+  contents: write             # нужно, чтобы сохранять базу synoptic.db
+
+concurrency:
+  group: synoptic-db          # не даём двум скриптам писать в базу одновременно
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install requests
+      - name: Run
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python space_weather.py alert
+      - name: Save database
+        run: |
+          git config user.name "synoptic-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add synoptic.db
+          git diff --staged --quiet || (git commit -m "update db" && git pull --rebase && git push)
