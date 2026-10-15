@@ -1,0 +1,33 @@
+name: Daily weather record
+
+on:
+  schedule:
+    - cron: "0 20 * * *"   # 20:00 UTC = 23:00 по Киеву летом, 22:00 зимой
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: synoptic-db
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install requests
+      - name: Run
+        run: python weather_daily.py
+      - name: Save database
+        run: |
+          git config user.name "synoptic-bot"
+          git config user.email "bot@users.noreply.github.com"
+          if [ -f synoptic.db ]; then
+            git add synoptic.db
+            git diff --staged --quiet || (git commit -m "update db" && git pull --rebase && git push)
+          fi
