@@ -1,0 +1,36 @@
+name: Koshtovnosti Telegram post
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Koshtovnosti dependencies
+        run: pip install -r requirements_koshtovnosti.txt
+
+      - name: Publish at 11:00 Kyiv time
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: |
+          HOUR=$(TZ=Europe/Kyiv date +%H)
+          MINUTE=$(TZ=Europe/Kyiv date +%M)
+
+          if [ "$HOUR" = "11" ] && [ "$MINUTE" -lt "10" ]; then
+            python Koshtovnosti.py
+          else
+            echo "Зараз не час публікації за Києвом."
+          fi
