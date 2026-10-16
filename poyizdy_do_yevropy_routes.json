@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "source": "https://uz-vezemo.uz.gov.ua/ (офіційна сторінка міжнародних рейсів Укрзалізниці)",
+    "checked": "2026-10-17",
+    "prices_checked": null,
+    "help": "days: daily | odd | even (за числом місяця відправлення зі станції початку). enabled=false — рейс не потрапляє в пост, поки ви його не перевірите. uz — номер поїзда на офіційній сторінці. arr_day — через скільки діб прибуття (0 — того ж дня, 1 — наступного). prices — мінімальна ціна «від», грн; null — не показувати."
+  },
+  "countries": {
+    "PL": {"name": "Польща", "emoji": "🇵🇱", "tz_shift": 60},
+    "HU": {"name": "Угорщина", "emoji": "🇭🇺", "tz_shift": 60},
+    "SK": {"name": "Словаччина", "emoji": "🇸🇰", "tz_shift": 60},
+    "AT": {"name": "Австрія", "emoji": "🇦🇹", "tz_shift": 60},
+    "MD": {"name": "Молдова", "emoji": "🇲🇩", "tz_shift": 0}
+  },
+  "routes": [
+    {"id": "715", "enabled": true, "uz": "715", "train": "№715 Інтерсіті+", "kind": "денний", "country": "PL",
+     "from": "Київ", "to": "Перемишль", "days": "daily", "dep": "11:06", "arr": "19:55", "arr_day": 0,
+     "note": "Зупинки: Вінниця, Хмельницький, Тернопіль",
+     "prices": {"2 клас": null, "1 клас": null}},
+
+    {"id": "705", "enabled": true, "uz": "705", "train": "№705 Інтерсіті+", "kind": "вечірній", "country": "PL",
+     "from": "Київ", "to": "Перемишль", "days": "daily", "dep": "18:35", "arr": "03:30", "arr_day": 1,
+     "note": null,
+     "prices": {"2 клас": null, "1 клас": null}},
+
+    {"id": "051", "enabled": true, "uz": "51", "train": "№51", "kind": "нічний", "country": "PL",
+     "from": "Київ", "to": "Перемишль", "days": "daily", "dep": "20:05", "arr": "05:00", "arr_day": 1,
+     "note": "Через Львів",
+     "prices": {"Плацкарт": null, "Купе": null, "СВ": null}},
+
+    {"id": "089", "enabled": true, "uz": "89", "train": "№89", "kind": "нічний", "country": "PL",
+     "from": "Київ", "to": "Перемишль", "days": "even", "dep": "23:26", "arr": "11:20", "arr_day": 1,
+     "note": "Курсує по парних числах",
+     "prices": {"Плацкарт": null, "Купе": null, "СВ": null}},
+
+    {"id": "019", "enabled": true, "uz": "19", "train": "№19", "kind": "вечірній", "country": "PL",
+     "from": "Київ", "to": "Холм", "days": "daily", "dep": "19:06", "arr": "05:00", "arr_day": 1,
+     "note": "У Холмі — пересадка на IC до Варшави (06:22 → 09:43)",
+     "prices": {"Плацкарт": null, "Купе": null, "СВ": null}},
+
+    {"id": "023", "enabled": true, "uz": "23", "train": "№23", "kind": "нічний", "country": "PL",
+     "from": "Київ", "to": "Холм", "days": "daily", "dep": "21:30", "arr": "08:08", "arr_day": 1,
+     "note": "У Холмі — пересадка на IC до Варшави (08:32 → 11:19)",
+     "prices": {"Плацкарт": null, "Купе": null, "СВ": null}},
+
+    {"id": "351", "enabled": true, "uz": "351", "train": "№351", "kind": "нічний", "country": "MD",
+     "from": "Київ", "to": "Кишинів", "days": "odd", "dep": "18:06", "arr": "11:53", "arr_day": 1,
+     "note": "Курсує по непарних числах",
+     "prices": {"Плацкарт": null, "Купе": null}},
+
+    {"id": "009", "enabled": false, "uz": "9", "train": "№9", "kind": "денний", "country": "HU",
+     "from": "Київ", "to": "Будапешт", "days": "daily", "dep": "09:43", "arr": "06:00", "arr_day": 1,
+     "note": "ПЕРЕВІРИТИ: дні курсування та чи це наскрізний поїзд",
+     "prices": {"Плацкарт": null, "Купе": null}},
+
+    {"id": "033", "enabled": false, "uz": "33", "train": "№33", "kind": "денний", "country": "HU",
+     "from": "Мукачево", "to": "Будапешт", "days": "daily", "dep": "10:22", "arr": "16:39", "arr_day": 0,
+     "note": "ПЕРЕВІРИТИ: дні курсування",
+     "prices": {"2 клас": null}},
+
+    {"id": "031", "enabled": false, "uz": "31", "train": "№31", "kind": "вечірній", "country": "HU",
+     "from": "Мукачево", "to": "Будапешт", "days": "daily", "dep": "16:30", "arr": "22:39", "arr_day": 0,
+     "note": "ПЕРЕВІРИТИ: дні курсування",
+     "prices": {"2 клас": null}},
+
+    {"id": "963", "enabled": false, "uz": "963", "train": "№963", "kind": "денний", "country": "SK",
+     "from": "Мукачево", "to": "Кошице", "days": "daily", "dep": "11:54", "arr": "15:18", "arr_day": 0,
+     "note": "ПЕРЕВІРИТИ: дні курсування",
+     "prices": {"2 клас": null}},
+
+    {"id": "965", "enabled": false, "uz": "965", "train": "№965", "kind": "вечірній", "country": "SK",
+     "from": "Мукачево", "to": "Кошице", "days": "daily", "dep": "18:57", "arr": "22:50", "arr_day": 0,
+     "note": "ПЕРЕВІРИТИ: дні курсування",
+     "prices": {"2 клас": null}},
+
+    {"id": "749", "enabled": false, "uz": "749", "train": "№749", "kind": "денний", "country": "AT",
+     "from": "Київ", "to": "Відень", "days": "daily", "dep": "12:33", "arr": "08:53", "arr_day": 1,
+     "note": "ПЕРЕВІРИТИ: чи наскрізний і дні курсування",
+     "prices": {"Плацкарт": null, "Купе": null}}
+  ]
+}
