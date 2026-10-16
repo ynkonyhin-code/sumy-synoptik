@@ -1,0 +1,43 @@
+name: Koshtovnosti Telegram post
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Koshtovnosti dependencies
+        run: pip install -r requirements_koshtovnosti.txt
+
+      - name: Publish post
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Ручной запуск: публикуем пост независимо от времени."
+            python Koshtovnosti.py
+          else
+            HOUR=$(TZ=Europe/Kyiv date +%H)
+            MINUTE=$(TZ=Europe/Kyiv date +%M)
+
+            if [ "$HOUR" = "11" ] && [ "$MINUTE" -lt "10" ]; then
+              echo "Плановый запуск около 11:00 по Киеву."
+              python Koshtovnosti.py
+            else
+              echo "Сейчас не время публикации по расписанию."
+            fi
+          fi
