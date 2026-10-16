@@ -1,0 +1,38 @@
+name: Вечірня запис погоди
+
+on:
+  schedule:
+    # 18:00 UTC = 21:00 за Києвом влітку / 20:00 взимку.
+    # Скрипт записує вчора і сьогодні, тож точна година не критична.
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # commit_journal() зберігає журнал у репозиторій
+
+concurrency:
+  group: weather-daily
+  cancel-in-progress: false
+
+jobs:
+  weather:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements_weather_daily.txt
+
+      - run: pip install -r requirements_weather_daily.txt
+
+      - name: Налаштування git для коміту журналу
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Запис погоди
+        run: python weather_daily.py
