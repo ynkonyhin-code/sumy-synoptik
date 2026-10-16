@@ -1,0 +1,37 @@
+name: Поїзди до Європи
+
+on:
+  schedule:
+    # Cron працює в UTC. 05:05 UTC = 08:05 Київ (літо), 06:05 UTC = 08:05 Київ (зима).
+    # Скрипт сам публікує лише коли в Києві 08:xx, тож дубля не буде.
+    - cron: "5 5,6 * * *"
+  workflow_dispatch:   # ручний запуск з вкладки Actions (публікує одразу)
+
+concurrency:
+  group: poyizdy-do-yevropy
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements_poyizdy_do_yevropy.txt
+
+      - name: Шрифти з кирилицею
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+
+      - run: pip install -r requirements_poyizdy_do_yevropy.txt
+
+      - name: Публікація в Telegram
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: python poyizdy_do_yevropy.py
