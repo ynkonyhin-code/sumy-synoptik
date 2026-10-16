@@ -1,0 +1,53 @@
+name: Щоденний календар
+
+on:
+  schedule:
+    # Київ = UTC+3 влітку, UTC+2 взимку. Запускаємо двічі,
+    # скрипт сам публікує лише коли у Києві 10:xx.
+    - cron: "5 7 * * *"
+    - cron: "5 8 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Дата РРРР-ММ-ДД (порожньо — сьогодні)"
+        required: false
+      dry_run:
+        description: "Тільки показати, не публікувати"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shchodennyy-kalendar
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Шрифти з кирилицею
+        run: sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
+      - run: pip install -r requirements.txt
+
+      - name: Публікація
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          DATE_IN: ${{ inputs.date }}
+          DRY_IN: ${{ inputs.dry_run }}
+        run: |
+          ARGS=""
+          if [ -n "$DATE_IN" ]; then ARGS="$ARGS --date $DATE_IN"; fi
+          if [ "$DRY_IN" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          python shchodennyy_kalendar.py $ARGS
