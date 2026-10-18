@@ -1,0 +1,55 @@
+name: tayemnytsi_neba
+
+on:
+  schedule:
+    # Вівторок і п'ятниця. Вікно 15:00–17:59 UTC покриває 18:00–20:30 за Києвом і влітку, і взимку;
+    # точний час (18:00 + 0–60 хв) визначає сам скрипт.
+    - cron: "*/10 15-17 * * 2,5"
+  workflow_dispatch:
+    inputs:
+      test_post:
+        description: "Тест: надіслати випуск зараз (стан не зберігається)"
+        type: boolean
+        default: false
+      test_issue:
+        description: "Номер випуску для тесту (порожньо = наступний за чергою)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tayemnytsi_neba
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tayemnytsi_neba_requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r tayemnytsi_neba_requirements.txt
+
+      - name: Run tayemnytsi_neba
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          TEST_POST: ${{ inputs.test_post }}
+          TEST_ISSUE: ${{ inputs.test_issue }}
+        run: python tayemnytsi_neba.py
+
+      - name: Save state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f tayemnytsi_neba_state.json ]; then git add tayemnytsi_neba_state.json; fi
+          git diff --cached --quiet || (git commit -m "tayemnytsi_neba: update state" && git pull --rebase origin "${{ github.ref_name }}" && git push)
