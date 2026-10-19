@@ -1,0 +1,52 @@
+name: anons_tayemnytsi_neba
+
+on:
+  schedule:
+    # Ранок (08:00–08:30 за Києвом = 05:00–06:30 UTC влітку / 06:00–07:30 взимку) і вечір (20:30–21:00 = 17:30–19:00 UTC).
+    # Точний час публікації щоразу інший — його визначає сам скрипт.
+    - cron: "*/10 5-7 * * *"
+    - cron: "*/10 17-19 * * *"
+  workflow_dispatch:
+    inputs:
+      test_post:
+        description: "Тест: надіслати афішу зараз (стан не зберігається, попередня не видаляється)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anons_tayemnytsi_neba
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: anons_tayemnytsi_neba_requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r anons_tayemnytsi_neba_requirements.txt
+
+      - name: Run anons_tayemnytsi_neba
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          TEST_CHAT_ID: ${{ secrets.TEST_CHAT_ID }}   # необов'язковий секрет: куди надсилати тестові пости
+          TEST_POST: ${{ inputs.test_post }}
+        run: python anons_tayemnytsi_neba.py
+
+      - name: Save state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f anons_tayemnytsi_neba_state.json ]; then git add anons_tayemnytsi_neba_state.json; fi
+          git diff --cached --quiet || (git commit -m "anons_tayemnytsi_neba: update state" && git pull --rebase origin "${{ github.ref_name }}" && git push)
