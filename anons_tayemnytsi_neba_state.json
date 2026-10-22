@@ -4,8 +4,9 @@
     "2026-10-20-morning",
     "2026-10-20-evening",
     "2026-10-21-morning",
-    "2026-10-21-evening"
+    "2026-10-21-evening",
+    "2026-10-22-morning"
   ],
-  "last_message_id": 1063,
-  "next_image": 2
+  "last_message_id": 1125,
+  "next_image": 3
 }
