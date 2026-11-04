@@ -1,6 +1,5 @@
 {
   "done": [
-    "2026-10-30-morning",
     "2026-10-30-evening",
     "2026-10-31-morning",
     "2026-10-31-evening",
@@ -9,8 +8,9 @@
     "2026-11-02-morning",
     "2026-11-02-evening",
     "2026-11-03-morning",
-    "2026-11-03-evening"
+    "2026-11-03-evening",
+    "2026-11-04-morning"
   ],
-  "last_message_id": 1609,
-  "next_image": 1
+  "last_message_id": 1639,
+  "next_image": 2
 }
