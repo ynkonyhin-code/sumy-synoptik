@@ -1,0 +1,40 @@
+# ФАЙЛ: alarm_monitor_test.yml | ПРОЄКТ: «Сумський синоптик» | ЗАДАЧА: безпечна перевірка монітора тривог
+# КУДИ КЛАСТИ: .github/workflows/alarm_monitor_test.yml
+# Запуск ТІЛЬКИ вручну. Нічого не публікує в канал, не пише alarm_state.json, не робить коміти, робочий монітор не чіпає.
+#   • simulate = true  — вигадана тривога (Охтирка → Суми → відбій): показує, як виглядатимуть пости;
+#   • simulate = false — чесне опитування реального API кілька циклів: що монітор побачив би зараз.
+name: Sumy Alarm Monitor — пробний прогін
+
+on:
+  workflow_dispatch:
+    inputs:
+      simulate:
+        description: "Імітувати тривогу, щоб побачити оформлення постів"
+        type: boolean
+        default: true
+
+concurrency:
+  group: alarm-monitor-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests beautifulsoup4
+      - name: Пробний прогін (DRY_RUN)
+        env:
+          DRY_RUN: "1"
+          SIMULATE: ${{ inputs.simulate && '1' || '0' }}
+          UKRAINEALARM_API_KEY: ${{ secrets.UKRAINEALARM_API_KEY }}
+          LOOP_MINUTES: "7"
+          POLL_SECONDS: "120"
+        run: python -u alarm_checker.py
