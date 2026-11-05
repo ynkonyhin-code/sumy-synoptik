@@ -1,0 +1,41 @@
+name: Нічна зміна (Кіт і Сова)
+
+on:
+  schedule:
+    # Скрипт сам вирішує, що публікувати (за Києвом 22:00-08:00).
+    # UTC 19-05 покриває і літній, і зимовий час.
+    - cron: "*/15 19-23,0-5 * * *"
+  workflow_dispatch:
+    inputs:
+      test_kind:
+        description: "Тест: evening / tale / morning (порожньо = за розкладом)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nichna-zmina
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          TEST_KIND: ${{ github.event.inputs.test_kind }}
+        run: python nichna_zmina.py
+      - name: Save state
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add nichna_zmina_state.json || true
+          git diff --cached --quiet || (git commit -m "nichna_zmina: state" && git pull --rebase && git push)
