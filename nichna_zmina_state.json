@@ -1,10 +1,11 @@
 {
   "night": "2026-11-07",
   "done": [
-    "tale1"
+    "tale1",
+    "tale3"
   ],
-  "tale_index": 3,
-  "tale_no": 3,
+  "tale_index": 4,
+  "tale_no": 4,
   "morning_index": 1,
-  "last_post_at": "2026-11-08T00:41:20.325794+02:00"
+  "last_post_at": "2026-11-08T03:54:54.885113+02:00"
 }
