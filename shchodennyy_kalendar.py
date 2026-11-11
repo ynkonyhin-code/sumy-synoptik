@@ -31,6 +31,7 @@ import shchodennyy_kalendar_data as D
 # ── Налаштування ─────────────────────────────────────────────────────────────
 TZ = ZoneInfo("Europe/Kyiv")
 POST_HOUR = 10                      # о котрій годині (за Києвом) публікуємо
+POST_WINDOW_HOURS = 3               # скільки годин після POST_HOUR ще можна публікувати (запізнілі запуски cron)
 SUMY_LAT, SUMY_LON = 50.9077, 34.7981
 CHANNEL_NAME = "Сумський синоптик"
 CHANNEL_URL = "https://t.me/sumskoy_sinoptik"
@@ -394,10 +395,22 @@ def main() -> int:
 
     now = datetime.now(TZ)
 
-    # GitHub Actions запускає два cron (на літній і зимовий час) — публікуємо лише о 10:00 за Києвом
-    if (os.getenv("GITHUB_EVENT_NAME") == "schedule" and not args.force
-            and now.hour != POST_HOUR):
-        print(f"Зараз {now:%H:%M} за Києвом — не година публікації ({POST_HOUR}:00). Пропускаю.")
+    # GitHub cron спізнюється на хвилини й години, тому публікуємо не «рівно о 10:00»,
+    # а в будь-який момент вікна 10:00–12:59 за Києвом. Від дублів захищає workflow
+    # (мітка в кеші Actions на кожну дату). Ручний запуск і FORCE=1 вікно ігнорують.
+    if args.force:
+        forced = True
+    elif os.getenv("FORCE") in ("1", "true", "True"):
+        forced = True
+    elif os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        forced = True
+    else:
+        forced = False
+
+    if (os.getenv("GITHUB_EVENT_NAME") == "schedule" and not forced
+            and not (POST_HOUR <= now.hour < POST_HOUR + POST_WINDOW_HOURS)):
+        print(f"Зараз {now:%H:%M} за Києвом — поза вікном публікації "
+              f"({POST_HOUR}:00–{POST_HOUR + POST_WINDOW_HOURS}:00). Пропускаю.")
         return 0
 
     d = date.fromisoformat(args.date) if args.date else now.date()
