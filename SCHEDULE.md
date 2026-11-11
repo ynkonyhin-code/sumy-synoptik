@@ -23,5 +23,5 @@
 | Бойові втрати | 09:00 | `zahalni_boyovi_vtraty.yml` | ✅ |
 | Рух тролейбусів | за подіями | `rukh_troleybusiv.yml` | ✅ |
 | Анонс «Таємниць неба» | за подією | `anons_tayemnytsi_neba.yml` | ✅ |
-| Нічна зміна: Кіт і Сова | 22:00–08:00 | `nichna_zmina.yml` | ✅ |
+| Нічна зміна: Кіт і Сова | 23:15, 00:30–05:45, 06:00 | `nichna_zmina.yml` | ✅ |
 | Підсумок тижня | пн 09:00 | `weekly-digest.yml` | ✅ |

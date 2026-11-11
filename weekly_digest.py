@@ -37,7 +37,8 @@ def card_data(last_day: date, days: int = 7) -> dict:
     t1 = __import__("datetime").datetime.combine(last_day + timedelta(days=1), __import__("datetime").time.min)
 
     stats = __import__("events_db").schedule_stats(first_day, last_day, days)
-    rows = [{"title": r["title"], "days": r["days"]} for r in stats["rows"] if r["days"] > 0][:8]
+    rows = [{"title": r["title"], "days": r["days"], "expected": r.get("expected", days)}
+            for r in stats["rows"] if r["days"] > 0][:8]
 
     events = []
     for etype, title in TYPE_TITLES.items():

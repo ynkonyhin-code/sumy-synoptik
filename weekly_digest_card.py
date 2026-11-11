@@ -129,12 +129,15 @@ def render_card(data: dict, out_path: str = "digest.png") -> str:
         _t(d, (pad + 28, ry), "Журнал публікацій ще порожній", _font(23), MUTED)
         _t(d, (pad + 28, ry + 32), "Заповнюється з наступного виходу постів", _font(20), MUTED)
     for r in rows:
-        pct = r["days"] / max(total_days, 1)
+        # у рубрик, що виходять лише частину тижня (вихідні, легенди, підсумок),
+        # знаменник свій — інакше «2 з 7» виглядало б як провал
+        total = r.get("expected", total_days)
+        pct = r["days"] / max(total, 1)
         col = GREEN if pct >= 0.99 else (AMBER if pct >= 0.7 else RED)
         mark = "●" if pct >= 0.99 else ("◐" if pct >= 0.7 else "○")
         _t(d, (pad + 28, ry), mark, _font(24, True), col)
         _t(d, (pad + 66, ry + 2), r["title"], _font(24), max_w=W - pad - 190 - (pad + 66))
-        _right(d, W - pad - 30, ry + 2, f"{r['days']}/{total_days}", _font(24, True), col)
+        _right(d, W - pad - 30, ry + 2, f"{r['days']}/{total}", _font(24, True), col)
         ry += 44
     y += height + 18
 

@@ -204,10 +204,13 @@ def _fmt_dur(sec: float) -> str:
 def schedule_stats(first_day: date, last_day: date, days: int) -> dict:
     """Скільки днів тижня вийшла кожна рубрика «строго за розкладом» (журнал journal/posted)."""
     week = _read_posted_week(first_day, last_day) if _read_posted_week else {}
+    # рубрики, що виходять лише частину тижня: скільки днів вони мали б вийти
+    expected = {"weekend": 3, "legends": 2, "how_weather": 1, "digest": 1}
     rows = []
     for key, title in SCHEDULE_TITLES.items():
         n = sum(1 for day in week.values() if key in day)
-        rows.append({"key": key, "title": title, "days": n, "total": days})
+        rows.append({"key": key, "title": title, "days": n, "total": days,
+                     "expected": expected.get(key, days)})
     # рубрики, які жодного разу не вийшли, у підсумку не показуємо:
     # журнал заповнюється з моменту впровадження, і «0 з 7» за весь канал було б неправдою
     rows = [r for r in rows if r["days"] > 0]
@@ -231,8 +234,9 @@ def weekly_digest(last_day: date | None = None, days: int = 7) -> str:
     if schedule["rows"]:
         lines.append("🗓 <b>Виходило за розкладом</b>")
         for row in schedule["rows"]:
-            mark = "✅" if row["days"] >= days else ("⚠️" if row["days"] >= days - 2 else "❗️")
-            lines.append(f"{mark} {row['title']}: {row['days']} з {days}")
+            total = row.get("expected", days)
+            mark = "✅" if row["days"] >= total else ("⚠️" if row["days"] >= total - 1 else "❗️")
+            lines.append(f"{mark} {row['title']}: {row['days']} з {total}")
         missing = [r["title"] for r in schedule["rows"] if r["days"] == 0]
         if missing:
             lines.append(f"<i>Не виходило жодного дня: {', '.join(missing)}</i>")
