@@ -45,9 +45,15 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python water_checker.py ${{ inputs.dry_run && '--dry-run' || '' }}
 
-      - name: Commit and Push last_water_post_id.txt
+      - name: Commit and Push state
+        if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          if [ -f last_water_post_id.txt ]; then git add last_water_post_id.txt; fi
-          git diff --cached --quiet || (git commit -m "Auto-update last processed water post ID" && git push)
+          git add last_water_post_id.txt journal 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "Auto-update last processed water post ID"
+          for i in 1 2 3; do
+            git push && break
+            git pull --rebase --autostash || true
+            sleep 3
+          done

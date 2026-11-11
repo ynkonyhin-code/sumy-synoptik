@@ -300,11 +300,16 @@ def main():
     newest = posts[-1]["id"]
     matching = [p for p in posts if KEYWORDS.search(p["plain"])]
     todo = matching[-1:] if last is None else [p for p in matching if p["id"] > last]
+    missed = [p["id"] for p in matching if last is not None and p["id"] <= last]
+    if missed:
+        print(f"Уже оброблені раніше: {', '.join(map(str, missed[-5:]))}")
 
     if not local:
         now = datetime.now(timezone.utc)
         todo = [p for p in todo if not p["dt"] or now - p["dt"] <= timedelta(hours=MAX_AGE_HOURS)]
-    todo = todo[-MAX_POSTS_PER_RUN:]
+    # спершу найсвіжіші аварійні повідомлення, а не найстаріші зі стрічки
+    todo = sorted(todo, key=lambda p: (p["dt"] or datetime.now(timezone.utc)), reverse=True)
+    todo = todo[:MAX_POSTS_PER_RUN]
 
     if not todo:
         print("Нових цільових постів про воду не знайдено.")

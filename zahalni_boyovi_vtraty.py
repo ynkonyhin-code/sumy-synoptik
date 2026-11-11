@@ -20,6 +20,17 @@ from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
 
+# Журнал подій для «Підсумку тижня». Необов'язковий: якщо events_db.py немає або щось
+# пішло не так, скрипт працює точно так само, як раніше.
+try:
+    from events_db import commit_journal, safe_log
+except Exception:
+    def safe_log(*args, **kwargs):
+        return False
+
+    def commit_journal():
+        return None
+
 # --------------------------------------------------------------------------- #
 # Настройки
 # --------------------------------------------------------------------------- #
@@ -205,7 +216,17 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     sent = 0
 
-    for post in posts:
+    def post_dt(post):
+        el = post.select_one(".tgme_widget_message_date time")
+        if el and el.get("datetime"):
+            try:
+                return datetime.fromisoformat(el["datetime"].replace("Z", "+00:00"))
+            except ValueError:
+                pass
+        return now
+
+    # сводка одна за добу: спершу найсвіжіша, щоб запізнілий запуск не витягнув учорашню
+    for post in sorted(posts, key=post_dt, reverse=True):
         post_id = post.get("data-post")
         if not post_id or post_id in posted:
             continue
@@ -245,11 +266,14 @@ def main() -> int:
 
         save_posted_id(post_id)
         posted.add(post_id)
+        _first = (text.strip().splitlines() or [""])[0][:120]
+        safe_log("vtraty", _first, key=f"vtraty-{post_id}", when=post_dt(post))
         sent += 1
         print(f"Пост {post_id} успешно опубликован!")
         time.sleep(2)
 
     trim_history()
+    commit_journal()
     print(f"Готово. Новых публикаций: {sent}")
     return 0
 

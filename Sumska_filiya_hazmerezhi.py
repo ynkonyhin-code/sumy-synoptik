@@ -115,13 +115,19 @@ def log(msg: str) -> None:
 def normalize(s: str) -> str:
     s = s.lower()
     s = re.sub(r"[«»“”„\"'’`]", "", s)
-    return re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
+    return re.sub(r"(?<=\w)-(?=\w)", "-", s)
 
 
 NORMALIZED_KEYWORDS = [normalize(k) for k in KEYWORDS]
 
 
 def matches_keywords(text: str) -> bool:
+    """Ключові фрази шукаємо у ВСЬОМУ тексті поста, а не лише на початку.
+
+    Раніше фраза мала стояти на початку поста — і пости з преамбулою
+    («📣 Шановні споживачі! … Виконаємо планові газонебезпечні роботи в …») проходили повз.
+    """
     n = normalize(text)
     return any(k in n for k in NORMALIZED_KEYWORDS)
 
@@ -183,6 +189,16 @@ def fetch_messages() -> list:
 
     messages.sort(key=lambda x: x["id"])
     return messages
+
+
+def recent_ids(messages: list, now: datetime, hours: float) -> list:
+    """Пости, які ще могли б вийти (молодші за MAX_AGE_HOURS).
+
+    На першому запуску «просмотреними» позначаємо лише їх: інакше один збій стану
+    назавжди відрізав усі старі пости, а вони ще могли бути актуальними.
+    """
+    return [m["id"] for m in messages
+            if not m["dt"] or now - m["dt"] <= timedelta(hours=hours)]
 
 
 def clean_text(el) -> str:
@@ -352,16 +368,20 @@ def main() -> int:
     messages = fetch_messages()
     log(f"Получено постов с канала: {len(messages)}")
 
-    # Первый запуск: запоминаем текущие посты, чтобы не засыпать канал архивом
+    now = datetime.now(timezone.utc)
+
+    # Первый запуск: запоминаем только свежие посты, чтобы не засыпать канал архивом
     if first_run and not FIRST_RUN_POST:
-        save_state([m["id"] for m in messages])
-        log("Первый запуск: текущие посты помечены как просмотренные.")
+        save_state(recent_ids(messages, now, MAX_AGE_HOURS))
+        log("Первый запуск: свежие посты помечены как просмотренные.")
         return 0
 
-    now = datetime.now(timezone.utc)
     sent = 0
 
-    for idx, msg in enumerate(messages):
+    # спершу свіжі пости (порядок id зберігаємо для склейки альбомів у collect_album)
+    order = sorted(range(len(messages)), key=lambda i: (messages[i]["dt"] or now), reverse=True)
+    for idx in order:
+        msg = messages[idx]
         if sent >= MAX_POSTS_PER_RUN:
             break
         if msg["id"] in posted_set or not msg["raw_text"]:

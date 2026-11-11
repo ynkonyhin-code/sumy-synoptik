@@ -70,6 +70,13 @@ KEYWORDS = [
     "фахівці ДСНС працювали на місці ранкової атаки",
     "під ударами російських безпілотників опинився",
     "ворожий дрон атакував місто Суми",
+    # пожежі та надзвичайні події без згадки про атаку (за минулу добу, будинки, люди)
+    "на сумщині рятувальники ліквідували",
+    "рятувальники ліквідували пожежу",
+    "ліквідували пожежу в житловому",
+    "внаслідок пожежі загинув",
+    "внаслідок пожежі травмован",
+    "врятували людину на пожежі",
 ]
 
 # Базовые теги + теги по теме (regex по тексту -> теги)
@@ -179,6 +186,12 @@ def fetch_messages() -> list:
 
     messages.sort(key=lambda x: x["id"])
     return messages
+
+
+def recent_ids(messages: list, now: datetime, hours: float) -> list:
+    """Пости, які ще могли б вийти (молодші за MAX_AGE_HOURS), — для першого запуску."""
+    return [m["id"] for m in messages
+            if not m["dt"] or now - m["dt"] <= timedelta(hours=hours)]
 
 
 def clean_text(el) -> str:
@@ -347,16 +360,19 @@ def main() -> int:
     messages = fetch_messages()
     log(f"Получено постов с канала: {len(messages)}")
 
-    # Первый запуск: запоминаем текущие посты, чтобы не засыпать канал архивом
+    now = datetime.now(timezone.utc)
+
+    # Первый запуск: запоминаем только свежие посты, чтобы не засыпать канал архивом
     if first_run and not FIRST_RUN_POST:
-        save_state([m["id"] for m in messages])
-        log("Первый запуск: текущие посты помечены как просмотренные.")
+        save_state(recent_ids(messages, now, MAX_AGE_HOURS))
+        log("Первый запуск: свежие посты помечены как просмотренные.")
         return 0
 
-    now = datetime.now(timezone.utc)
     sent = 0
 
-    for idx, msg in enumerate(messages):
+    # спершу свіжі пости, а не найстаріші в стрічці: інакше при потоці новин
+    # свіже повідомлення про атаку виходило лише після кількох старих
+    for idx, msg in sorted(enumerate(messages), key=lambda im: (im[1]["dt"] or now), reverse=True):
         if sent >= MAX_POSTS_PER_RUN:
             break
         if msg["id"] in posted_set or not msg["raw_text"]:

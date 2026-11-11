@@ -262,6 +262,8 @@ def main():
 
     ready = [c for c in clusters if settled(c)]
     todo = [c for c in ready if c["key"] not in seen and fresh(c)]
+    # спершу найсвіжіші: графіки відключень швидко втрачають актуальність
+    todo.sort(key=lambda c: (c["dt"] or now), reverse=True)
 
     if first_run:
         print("Перший запуск: усі наявні пости запам'ятовуємо як опубліковані.")

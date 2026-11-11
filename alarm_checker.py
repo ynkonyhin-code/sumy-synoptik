@@ -34,6 +34,7 @@
   DRY_RUN       - "1": пробний режим, див. вище
   SIMULATE      - "1" (лише з DRY_RUN=1): імітація тривоги Охтирка → Суми → відбій, щоб побачити оформлення постів
 """
+import base64
 import html
 import json
 import os
@@ -86,6 +87,10 @@ BOARD_ICON = {"RED": "🔴", "YELLOW": "🟡", "?": "⚠️"}   # «?» - тре
 DISTRICTS = ["Сумський", "Охтирський", "Конотопський", "Роменський", "Шосткинський"]
 SHORT = {"Сумський": "Суми", "Охтирський": "Охтирка", "Конотопський": "Конотоп",
          "Роменський": "Ромни", "Шосткинський": "Шостка"}
+# канал пише «Роменський район», а API віддає «Роменський» — зводимо варіанти до одного ключа
+DISTRICT_ALIASES = {"Роменський": "Роменський", "Роменский": "Роменський",
+                    "Конотопський": "Конотопський", "Шосткинський": "Шосткинський",
+                    "Охтирський": "Охтирський", "Сумський": "Сумський"}
 
 HOME_DISTRICT = "Сумський"  # лише для цього району виходять окремі пости
 SILENT_ALERTS = True        # True — пости тривог виходять без звуку (disable_notification)
@@ -111,6 +116,7 @@ if DRY_RUN:                                              # пробний реж
         return None
 
 STATE_FILE = "alarm_state.json"
+MAX_STATE_COMMITS = int(os.getenv("MAX_STATE_COMMITS", "3"))   # обмеження на кількість комітів стану за один запуск
 LEGACY_FILE = "last_alarm_post_id.txt"   # файл старой версии - используется один раз для миграции
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
 LOOP_MINUTES = float(os.getenv("LOOP_MINUTES", "0"))
@@ -133,33 +139,66 @@ def load_state():
     return state
 
 
-def commit_state():
-    """В GitHub Actions сразу коммитим состояние, чтобы не потерять его при остановке запуска."""
-    if os.getenv("COMMIT_STATE") != "1" or DRY_RUN:
-        return
+_commits_left = MAX_STATE_COMMITS
+_dirty = False
+
+
+def _push_files(paths, message):
+    """Закоммитить и запушить файлы состояния. True — удалось.
+
+    Пуш в общий main почти всегда упирается в чужие коммиты (в репозитории ~30 workflow'ов),
+    поэтому: коммит, затем pull --rebase и до 3 попыток пуша. Если не вышло — файл всё равно
+    лежит на диске, и его заберёт шаг «Save state» в конце запуска.
+    """
+    run = lambda *a: subprocess.run(a, check=False, capture_output=True, text=True)
     try:
-        run = lambda *a: subprocess.run(a, check=False, capture_output=True, text=True)
         run("git", "config", "user.name", "github-actions[bot]")
         run("git", "config", "user.email", "github-actions[bot]@users.noreply.github.com")
-        for f in (STATE_FILE, REGIONS_FILE):
+        for f in paths:
             if os.path.exists(f):
                 run("git", "add", f)
         if run("git", "diff", "--cached", "--quiet").returncode == 0:
-            return
-        run("git", "commit", "-m", "Update alarm state")
-        if run("git", "push").returncode != 0:
-            run("git", "pull", "--rebase")
-            run("git", "push")
+            return True
+        run("git", "commit", "-m", message)
+        for _ in range(3):
+            if run("git", "push").returncode == 0:
+                return True
+            run("git", "pull", "--rebase", "--autostash")
+        print("⚠ git push не вдався — стан збереже фінальний крок workflow.")
     except Exception as e:
         print(f"Не удалось сохранить состояние в git: {e}")
+    return False
+
+
+def commit_state():
+    """В GitHub Actions сразу коммитим состояние, чтобы не потерять его при остановке запуска."""
+    global _commits_left, _dirty
+    if os.getenv("COMMIT_STATE") != "1" or DRY_RUN:
+        return
+    if _commits_left <= 0:
+        return                                    # ліміт вичерпано — зробить фінальний крок
+    _commits_left -= 1
+    if _push_files((STATE_FILE, REGIONS_FILE), "Update alarm state"):
+        _dirty = False
 
 
 def save_state(state):
+    global _dirty
     if DRY_RUN:
         return
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=1)
+    _dirty = True
     commit_state()
+
+
+def flush_state():
+    """Фінальне збереження: добирає те, що не встигло піти в git під час циклу."""
+    global _dirty
+    if DRY_RUN or os.getenv("COMMIT_STATE") != "1":
+        return
+    if _dirty and _push_files((STATE_FILE, REGIONS_FILE), "Update alarm state (final)"):
+        _dirty = False
 
 
 def read_legacy_id():
@@ -201,8 +240,8 @@ _DIST_RE = re.compile(r"([А-ЯІЇЄҐа-яіїєґ]+ий)\s+район")
 def find_districts(text):
     out = []
     for m in _DIST_RE.finditer(text):
-        name = m.group(1).capitalize()
-        if name in DISTRICTS and name not in out:
+        name = DISTRICT_ALIASES.get(m.group(1).capitalize())
+        if name and name not in out:
             out.append(name)
     return out
 
@@ -250,16 +289,17 @@ def apply_event(active, ev):
             if active.get(d) != "RED":                 # красный не понижаем до жёлтого
                 active[d] = ev["level"]
     elif ev["level"] == "END":
-        # «досі триває у» - полный актуальный список; нет списка - значит тревог больше нет
-        active = {d: active.get(d, "?") for d in ev["still"]}
+        # «досі триває у» — это только ДОПОЛНЕНИЕ к состоянию, а не полный список районов:
+        # снимаем тревогу лишь там, где канал сказал «відбій», остальные районы не трогаем.
+        for d in ev["districts"]:
+            active.pop(d, None)
     return active
 
 
 # --- СООБЩЕНИЯ ----------------------------------------------------------------
 
 def board(active):
-    return " · ".join(f"{BOARD_ICON.get(active[d], '⚠️') if d in active else '🟢'} {SHORT[d]}"
-                      for d in DISTRICTS)
+    return " · ".join(f"{BOARD_ICON.get(active[d], '⚠️')} {SHORT[d]}" for d in DISTRICTS if d in active)
 
 
 def others_line(others):
@@ -472,9 +512,14 @@ def load_community_map():
                 rid = str(node.get("regionId", ""))
                 if rid in DISTRICT_IDS:
                     district = DISTRICT_IDS[rid]
+                    # сам район у карту НЕ пишемо: його id розбирається окремою гілкою в fetch_api,
+                    # інакше громада з тим самим id «перебивала» б район
+                    descend(node.get("regionChildIds", []), district)
                 elif district and rid:
                     mapping[rid] = district
-                descend(node.get("regionChildIds", []), district)
+                    descend(node.get("regionChildIds", []), district)
+                else:
+                    descend(node.get("regionChildIds", []), district)
 
         def find_state(node):
             if isinstance(node, list):
@@ -593,7 +638,10 @@ def update_hints(state):
 
 
 def home_change_api(before, after):
-    """Що сталося з HOME_DISTRICT: RED/YELLOW/AIR (початок), RED (підвищення), END (відбій) або None."""
+    """Що сталося з HOME_DISTRICT: RED/YELLOW/AIR (початок), RED (підвищення), END (відбій) або None.
+
+    `after` — рівень тривоги в Сумському районі (None, якщо тривоги немає).
+    """
     if after and not before:
         return after if after in ("RED", "YELLOW") else "AIR"
     if after == "RED" and before in ("YELLOW", "?"):
@@ -604,7 +652,6 @@ def home_change_api(before, after):
 
 
 def poll_api(state, api_active):
-    update_hints(state)
     hints = state.setdefault("hints", {})
     now = datetime.now(timezone.utc)
     for d in list(hints):                                             # старі підказки неактивних районів — прибираємо
@@ -621,12 +668,15 @@ def poll_api(state, api_active):
             lvl = hints.get(d, {}).get("level") or (old.get(d) if old.get(d) in ("RED", "YELLOW") else "?")
             new[d] = lvl
     change = home_change_api(old.get(HOME_DISTRICT), new.get(HOME_DISTRICT))
+    # відбій завжди позначаємо «🟢», навіть якщо в інших районах тривога ще триває —
+    # це відбій саме в Сумському районі, і пост має виглядати саме так
+    level = "END" if change == "END" else change
     if change:
-        group = {"level": change, "districts": [HOME_DISTRICT], "active_after": new, "source": "api"}
-        if not send_alert(change, build_caption(group)):
+        group = {"level": level, "districts": [HOME_DISTRICT], "active_after": new, "source": "api"}
+        if not send_alert(level, build_caption(group)):
             print("Не вдалося відправити, повторимо при наступній перевірці.")
             return state                                              # стан не рухаємо
-        print(f"Надіслано: {change} ({HOME_DISTRICT} район, джерело API)")
+        print(f"Надіслано: {level} ({HOME_DISTRICT} район, джерело API)")
         time.sleep(1)
         if change in ("RED", "YELLOW", "AIR") and not old.get(HOME_DISTRICT) and safe_log(
                 "alert", f"{change}: {HOME_DISTRICT} район", key=f"alert-api-{int(time.time())}", when=now):
@@ -641,11 +691,46 @@ def poll_api(state, api_active):
     return state
 
 
+# без каналу-підказки рівень невідомий: API каже лише «тривога / відбій»
+NO_HINTS = os.getenv("NO_HINTS") == "1"
+
+
 def poll(state):
     api_active = fetch_api()
     if api_active is None:
         return poll_channel(state)
+    try:                                        # підказки рівня (канал «Сирена Сумщини»)
+        update_hints(state)
+    except Exception as e:
+        print(f"Підказки рівня недоступні: {e}")
+    if NO_HINTS:
+        return poll_api_plain(state, api_active)
     return poll_api(state, api_active)
+
+
+def poll_api_plain(state, api_active):
+    """Режим без підказок: рівень не розрізняємо, лише «тривога» / «відбій» по Сумському району."""
+    old = state.get("active", {})
+    # стан за замовчуванням порожній, тому на першому запуску «Суми вже в тривозі» губилось:
+    # якщо тривога в Сумах уже є, а ми цього не знали — беремо рівень із підказок (якщо є)
+    if HOME_DISTRICT in api_active and HOME_DISTRICT not in old:
+        lvl = (state.get("hints") or {}).get(HOME_DISTRICT, {}).get("level") or "?"
+        old = dict(old, **{HOME_DISTRICT: lvl})
+    new = {d: "?" for d in DISTRICTS if d in api_active}
+    change = home_change_api(old.get(HOME_DISTRICT), new.get(HOME_DISTRICT))
+    level = "END" if change == "END" else "AIR"
+    if change:
+        group = {"level": level, "districts": [HOME_DISTRICT], "active_after": new, "source": "api"}
+        if not send_alert(level, build_caption(group)):
+            print("Не вдалося відправити, повторимо при наступній перевірці.")
+            return state
+        print(f"Надіслано: {level} ({HOME_DISTRICT} район, джерело API, без підказок)")
+        time.sleep(1)
+    if new != old:
+        print(f"Стан тривог: було {old or 'нема'} → стало {new or 'нема'}")
+    state["active"] = new
+    save_state(state)
+    return state
 
 
 def main():
@@ -659,6 +744,7 @@ def main():
         if LOOP_MINUTES <= 0 or time.time() + POLL_SECONDS > deadline:
             break
         time.sleep(POLL_SECONDS)
+    flush_state()
 
 
 if __name__ == "__main__":
