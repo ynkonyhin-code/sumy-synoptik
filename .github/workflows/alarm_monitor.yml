@@ -42,6 +42,8 @@ jobs:
           COMMIT_STATE: '1'
           MAX_STATE_COMMITS: '3'
           NO_HINTS: '0'
+          OTHER_POSTS: '1'        # окремі пости по районах області — з каналу «Сирена Сумщини»
+          API_SETTLE_MIN: '10'
         run: python alarm_checker.py
 
       - name: Save state (fallback)

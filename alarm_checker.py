@@ -6,6 +6,12 @@
 Тривоги в Охтирському, Конотопському, Роменському, Шосткинському районах окремих постів не дають —
 вони додаються рядком «Також тривога триває: ...» до поста по Сумському району.
 
+ДВА КАНАЛИ ОПОВІЩЕННЯ (щоб не було пропусків і дублів):
+  * тривога/відбій по Сумському району — миттєво, з API (кожні 2 хвилини), без звуку;
+  * тривога/відбій по решті районів області — окремим постом, але лише з каналу «Сирена Сумщини»
+    і з затримкою API_SETTLE_MIN: якщо за цей час API підтвердить те саме, пост по району вже
+    прийшов від API і канал його не дублює. Так райони не залежать від того, чи є підказка.
+
 РІВЕНЬ (червоний = ракетна загроза, жовтий = дронова): API його не розрізняє, тому підказку беремо з
 каналу «Сирена Сумщини» (парсер нижче). Немає підказки — пост нейтральний («Повітряна тривога», без кольору
 і без банера); коли з'явиться підказка «червоний» — окремий пост про підвищення. Якщо API недоступне
@@ -117,6 +123,10 @@ if DRY_RUN:                                              # пробний реж
 
 STATE_FILE = "alarm_state.json"
 MAX_STATE_COMMITS = int(os.getenv("MAX_STATE_COMMITS", "3"))   # обмеження на кількість комітів стану за один запуск
+# тривоги по інших районах беремо з каналу: API підтверджує їх із затримкою, тому пост по району
+# від каналу йде лише тоді, коли API за цей час його не підтвердив (інакше — дубль)
+OTHER_POSTS = os.getenv("OTHER_POSTS", "1") == "1"
+API_SETTLE_MIN = int(os.getenv("API_SETTLE_MIN", "10"))
 LEGACY_FILE = "last_alarm_post_id.txt"   # файл старой версии - используется один раз для миграции
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
 LOOP_MINUTES = float(os.getenv("LOOP_MINUTES", "0"))
@@ -418,6 +428,89 @@ def _sumy_time(g, kind):
     return g["ts"]
 
 
+# --- ПОСТИ ПО ІНШИХ РАЙОНАХ ОБЛАСТІ ------------------------------------------
+
+REGION_HASH = {"Сумський": "Суми", "Охтирський": "Охтирка", "Конотопський": "Конотоп",
+               "Роменський": "Ромни", "Шосткинський": "Шостка"}
+
+
+def other_head(level, district):
+    """Заголовок поста по району області: той самий вигляд, що й для Сумського району."""
+    who = f"{district} район"
+    if level in ("RED", "YELLOW", "AIR", "END"):
+        return HEADLINES[level].format(who=who)
+    return f"⚠️ <b>{who}</b> — повітряна тривога"
+
+
+def other_caption(level, district, active_after, settled):
+    """Підпис до поста по району області. `settled` — що каже API по цьому району (None — невідомо)."""
+    tags = f"#Сумщина #{REGION_HASH.get(district, 'Сумщина')}"
+    if level == "END":
+        tags += " #Відбій"
+    elif level == "YELLOW":
+        tags += " #Тривога #Дрони"
+    elif level == "RED":
+        tags += " #Тривога #Ракети"
+    else:
+        tags += " #Тривога"
+    lines = [other_head(level, district)]
+    others = {d: lvl for d, lvl in (active_after or {}).items() if d != district}
+    if others:
+        label = "Тривога ще триває" if level == "END" else "Також тривога триває"
+        lines.append(f"📍 {label}: {others_line(others)}")
+    if settled is not None and level != "END" and not settled:
+        lines.append("⏳ Монітор тривог по цьому району сигнал ще не підтвердив — орієнтуйтесь на офіційні джерела.")
+    lines.append(f"🔗 Джерело: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a> · {tags}")
+    return "\n".join(lines)
+
+
+def other_changes(groups, api_before, api_after):
+    """Які райони (крім Сумського) почали тривогу / отримали відбій у цих постах каналу.
+
+    Рівень беремо з того поста каналу, де район з'явився/зник (а не зі стану групи), інакше
+    червона тривога Конотопа «перефарбовувала» сусідній район, який насправді дрони.
+    Повертає [(рівень, район, active_after)] у порядку DISTRICTS.
+    """
+    # обходимо події по порядку: так бачимо кожну появу/відбій району, навіть якщо
+    # на початку й у кінці пачки стан збігається (тривога і відбій в одній пачці)
+    state = dict(groups[0].get("active_before") or {}) if groups else {}
+    seen = {}
+    out = []
+    for g in groups:
+        for ev in g.get("events", []):
+            after = dict(state)
+            for d in ev["districts"]:
+                if ev["level"] in ("RED", "YELLOW"):
+                    if after.get(d) != "RED":
+                        after[d] = ev["level"]
+                elif ev["level"] == "END":
+                    after.pop(d, None)
+            for d in ev["districts"]:
+                if d == HOME_DISTRICT:
+                    continue
+                was, now_lvl = state.get(d), after.get(d)
+                if now_lvl and not was:
+                    out.append((ev["level"], d, after))
+                elif was and not now_lvl:
+                    out.append(("END", d, after))
+                elif was == "?" and now_lvl in ("RED", "YELLOW"):
+                    out.append((ev["level"], d, after))   # уточнили рівень, якого не знали
+            state = after
+    return out
+
+
+def settle_conflict(district, level, api_before, api_after):
+    """Чи вже підтвердив API те саме? True — пост каналу не потрібен (він прийде або вже прийшов від API).
+
+    Для відбою: API вже не бачить тривоги в районі — тобто відбій по району вже вийшов від API.
+    """
+    if api_after is None:
+        return False
+    if level == "END":
+        return not api_after.get(district)
+    return bool(api_after.get(district))
+
+
 def poll_channel(state):
     """Запасний режим: тривоги з каналу «Сирена Сумщини» (використовується, коли API недоступне)."""
     posts = fetch_posts()
@@ -469,6 +562,27 @@ def poll_channel(state):
             commit_journal()
         state = {"last_id": g["last_num"], "active": g["active_after"]}
         save_state(state)
+
+    if OTHER_POSTS:                                     # окремі пости по районах області
+        api_before, api_after = _api_snapshot(state)
+        api_ok = api_after is not None
+        if not api_ok:                              # API щойно відмовив — питаємо один раз
+            try:
+                api_after, api_ok = fetch_api(), True
+            except Exception as e:
+                print(f"Знімок API для районів недоступний: {e}")
+                api_after = None
+        # «що зараз бачить API»: свіжий стан, який ведемо (у ньому вже є райони з каналу)
+        api_now = dict(state.get("active") or {}) if api_ok else None
+        for level, d, after in other_changes(groups, api_before, api_after):
+            if settle_conflict(d, level, api_before, api_now):
+                print(f"Район {d}: API вже підтвердив {level} — окремого поста від каналу не буде.")
+                continue
+            if not send_alert(level, other_caption(level, d, after, (api_now or {}).get(d))):
+                print(f"Не вдалося надіслати пост по району {d} — спробуємо наступного разу.")
+                continue
+            print(f"Надіслано: {level} ({d} район, джерело — канал)")
+            time.sleep(1)
 
     # непрофильные посты тоже считаем обработанными
     if new_posts[-1][0] > state["last_id"]:
@@ -604,6 +718,32 @@ def fetch_api():
     return active
 
 
+_api_snap = {"key": None, "active": None, "ts": 0.0}
+
+
+def _api_snapshot(state):
+    """({район: рівень} до, {район: рівень} після) за останнім знімком API. (None, None) — невідомо.
+
+    Знімок беруть обидва канали: poll() кладе свіжий стан API в _api_snap, а пост каналу,
+    що прийшов пізніше, може з ним порівнятися і зрозуміти, чи API те саме вже підтвердив.
+    """
+    key = state.get("api_key")
+    if key is not None and _api_snap["key"] == key:
+        return _api_snap["before"], _api_snap["active"]
+    active = state.get("api")
+    if active is not None:
+        return state.get("api_prev"), active
+    return None, None
+
+
+def remember_api(state, active):
+    """Зберегти знімок API у стані (щоб він пережив перезапуск)."""
+    prev = state.get("api")
+    state["api_prev"] = prev
+    state["api"] = dict(active) if active is not None else None
+    state["api_key"] = f"{time.time():.0f}"
+
+
 def update_hints(state):
     """Підказки рівня (RED/YELLOW) з каналу. Помилки каналу не критичні. Просуває last_id, щоб запасний режим не повторював старі пости."""
     hints = state.setdefault("hints", {})
@@ -661,7 +801,10 @@ def poll_api(state, api_active):
             age = timedelta(days=1)
         if d not in api_active and age > timedelta(minutes=HINT_TTL_MIN):
             del hints[d]
-    old = state.get("active", {})
+    old = dict(state.get("active", {}))
+    for d in api_active:                                  # район уже в тривозі, а ми не знали
+        if d not in old:
+            old[d] = hints.get(d, {}).get("level") or "?"
     new = {}
     for d in DISTRICTS:
         if d in api_active:
@@ -703,6 +846,8 @@ def poll(state):
         update_hints(state)
     except Exception as e:
         print(f"Підказки рівня недоступні: {e}")
+    remember_api(state, api_active)             # знімок API — для постів по районах із каналу
+    _api_snap.update(key=state.get("api_key"), before=state.get("api_prev"), active=state.get("api"))
     if NO_HINTS:
         return poll_api_plain(state, api_active)
     return poll_api(state, api_active)
@@ -710,13 +855,17 @@ def poll(state):
 
 def poll_api_plain(state, api_active):
     """Режим без підказок: рівень не розрізняємо, лише «тривога» / «відбій» по Сумському району."""
-    old = state.get("active", {})
-    # стан за замовчуванням порожній, тому на першому запуску «Суми вже в тривозі» губилось:
-    # якщо тривога в Сумах уже є, а ми цього не знали — беремо рівень із підказок (якщо є)
-    if HOME_DISTRICT in api_active and HOME_DISTRICT not in old:
-        lvl = (state.get("hints") or {}).get(HOME_DISTRICT, {}).get("level") or "?"
-        old = dict(old, **{HOME_DISTRICT: lvl})
-    new = {d: "?" for d in DISTRICTS if d in api_active}
+    old = dict(state.get("active", {}))
+    # стан за замовчуванням порожній, тому на першому запуску «район уже в тривозі» губився:
+    # якщо тривога в районі вже є, а ми цього не знали — рівень із підказок, інакше «?»
+    hints_all = state.get("hints") or {}
+    for d in api_active:
+        if d not in old:
+            old[d] = hints_all.get(d, {}).get("level") or "?"
+    new = {}
+    for d in DISTRICTS:
+        if d in api_active:
+            new[d] = "?" if d == HOME_DISTRICT else old.get(d, "?")
     change = home_change_api(old.get(HOME_DISTRICT), new.get(HOME_DISTRICT))
     level = "END" if change == "END" else "AIR"
     if change:
