@@ -1,28 +1,124 @@
 name: Weekly digest
 
+# Підсумок тижня — щопонеділка о 09:00 за Києвом.
+# GitHub cron спізнюється (інколи на години), тому:
+#   • три слоти (09:00 обидва пояси + 10:00 як страховка);
+#   • скрипт публікує у вікні 09:00–11:59 за Києвом;
+#   • мітка в кеші Actions = один підсумок на дату (без дублів).
+
 on:
   schedule:
-    - cron: "0 6 * * 1"    # понедельник 06:00 UTC = 09:00 по Киеву летом, 08:00 зимой
+    - cron: "0 6 * * 1"     # 09:00 Києва влітку (UTC+3)
+    - cron: "0 7 * * 1"     # 09:00 Києва взимку (UTC+2)
+    - cron: "0 8 * * 1"     # 10:00 Києва — страховка від затримки
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Тільки зібрати текст і картку, у канал НЕ публікувати"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: write        # keepalive
 
 concurrency:
-  group: synoptic-db
+  group: weekly-digest
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
+      - name: Keepalive — не даємо GitHub вимкнути розклад
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow enable weekly-digest.yml
+
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
-      - run: pip install requests
-      - name: Run
+          python-version: "3.12"
+          cache: pip
+
+      - name: Шрифти з кирилицею
+        run: sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+
+      - name: Залежності
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests Pillow
+
+      - name: Дата за Києвом
+        id: day
+        run: echo "today=$(TZ=Europe/Kyiv date +%F)" >> "$GITHUB_OUTPUT"
+
+      - name: Чи вже був підсумок сьогодні
+        id: guard
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .digest-flag
+          key: digest-posted-${{ steps.day.outputs.today }}
+
+      - name: Вікно публікації (09:00–11:59 за Києвом)
+        id: gate
+        run: |
+          hour=$((10#$(TZ=Europe/Kyiv date +%H)))
+          already="${{ steps.guard.outputs.cache-hit }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            run=true; reason="ручний запуск"
+          elif [ "$already" = "true" ]; then
+            run=false; reason="сьогодні вже опубліковано"
+          elif [ "$hour" -ge 9 ] && [ "$hour" -lt 12 ]; then
+            run=true; reason="вікно 09:00–11:59"
+          else
+            run=false; reason="поза вікном (зараз ${hour}:xx за Києвом)"
+          fi
+          echo "Київ: $(TZ=Europe/Kyiv date '+%F %H:%M') | run=$run | $reason"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - name: Публікація
+        if: steps.gate.outputs.run == 'true'
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python weekly_digest.py
+          DRY_IN: ${{ inputs.dry_run }}
+          CARD_OUT: output/digest.png
+        run: |
+          if [ "$DRY_IN" = "true" ]; then python weekly_digest.py --dry; else python weekly_digest.py; fi
+
+      - name: Перевірити картку
+        if: steps.gate.outputs.run == 'true' && inputs.dry_run != true
+        run: |
+          if [ ! -s output/digest.png ]; then
+            echo "::error title=Картка не створена::output/digest.png відсутній"
+            exit 1
+          fi
+          python -c "from PIL import Image; im=Image.open('output/digest.png'); print('картка:', im.size)"
+
+      - name: Картка для перегляду
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-card-${{ steps.day.outputs.today }}
+          path: output/digest.png
+          if-no-files-found: error
+
+      - name: Позначити «опубліковано»
+        if: steps.gate.outputs.run == 'true' && inputs.dry_run != true
+        run: |
+          mkdir -p .digest-flag
+          date -u +"%FT%TZ" > .digest-flag/posted
+
+      - name: Зберегти мітку
+        if: steps.gate.outputs.run == 'true' && inputs.dry_run != true
+        uses: actions/cache/save@v4
+        with:
+          path: .digest-flag
+          key: digest-posted-${{ steps.day.outputs.today }}

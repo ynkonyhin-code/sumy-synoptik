@@ -8,6 +8,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from digest_tracker import track, commit_posted
 
 # ============================================================
 # СУМСЬКИЙ СИНОПТИК — ПРОГНОЗ ТРИЧІ НА ДОБУ (картка-картинка + короткий текст + теги)
@@ -813,6 +814,8 @@ if not (result and result.get("ok")):
 if result.get("ok"):
     print()
     print("=" * 40)
+    track("weather", detail=f"режим: {mode}")
+    commit_posted()
     print("  ПРОГНОЗ УСПІШНО ОПУБЛІКОВАНО!")
     print("=" * 40)
     print(f"\nРежим: {mode}\nКанал: {CHANNEL}")

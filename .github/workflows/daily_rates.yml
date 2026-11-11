@@ -1,5 +1,8 @@
 name: Daily Currency & Fuel Post
 
+permissions:
+  contents: write     # збереження журналу публікацій
+
 on:
   schedule:
     # Публикация в 08:00 по Киеву круглый год.
@@ -41,3 +44,18 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SCHEDULE: ${{ github.event.schedule }}
         run: python rates_publisher.py
+
+      - name: Зберегти журнал публікацій (для «Підсумку тижня»)
+        if: always()
+        continue-on-error: true
+        run: |
+          git config user.name "synoptic-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add journal/posted 2>/dev/null || exit 0
+          git diff --cached --quiet -- journal/posted && exit 0
+          git commit -m "journal: posted $(TZ=Europe/Kyiv date +%F)" -- journal/posted || exit 0
+          for i in 1 2 3; do
+            git push && break
+            git pull --rebase --autostash || git rebase --abort
+            sleep 3
+          done

@@ -38,6 +38,8 @@ import ephem
 import requests
 
 from nebo_nad_sumamy_card import render_card
+from publish_window import in_window, window_note
+from digest_tracker import track, commit_posted
 
 # ── Налаштування ───────────────────────────────────────────────────────────
 TZ = ZoneInfo("Europe/Kyiv")
@@ -467,7 +469,7 @@ def main() -> int:
     now = datetime.now(TZ)
     day = date.fromisoformat(args.date) if args.date else now.date()
     force = args.force or args.dry_run or os.getenv("FORCE_RUN") == "1"
-    if not force and now.hour != POST_HOUR:
+    if not force and not in_window(POST_HOUR):
         log.info("У Києві зараз %s — не час публікації, вихід.", now.strftime("%H:%M"))
         return 0
 
@@ -485,6 +487,8 @@ def main() -> int:
         log.error("Не задано BOT_TOKEN / CHAT_ID")
         return 1
     publish(token, chat_id, CARD_PATH, text)
+    track("sky", detail="")
+    commit_posted()
     log.info("Опубліковано.")
     return 0
 

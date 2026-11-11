@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from PIL import Image, ImageDraw, ImageFont
+from digest_tracker import track, commit_posted
 
 KYIV = ZoneInfo("Europe/Kyiv")
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -368,6 +369,9 @@ def main():
         if now.weekday() != 4 or now.hour < POST_HOUR:
             print("[skip] публікація лише в п'ятницю після 17:00 за Києвом")
             return 0
+        if now.hour >= POST_HOUR + 7:      # запізнілий запуск у ніч уже не публікуємо
+            print("[skip] занадто пізно — публікація лише ввечері п'ятниці")
+            return 0
         if load_state().get("posted_for") == sat.isoformat():
             print("[skip] на ці вихідні вже опубліковано")
             return 0
@@ -396,6 +400,8 @@ def main():
     if not args.force:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump({"posted_for": sat.isoformat(), "at": now.isoformat()}, f, ensure_ascii=False, indent=2)
+    track("weekend", detail=f"на {sat:%d.%m}")
+    commit_posted()
     print("[ok] опубліковано")
     return 0
 

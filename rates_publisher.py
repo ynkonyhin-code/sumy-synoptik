@@ -10,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from jinja2 import Template
 from playwright.sync_api import sync_playwright
+from digest_tracker import track, commit_posted
 
 TZ = ZoneInfo("Europe/Kyiv")
 CHANNEL_LINK = "t.me/sumskoy_sinoptik"   # адрес канала, выводится внизу картинки ('' - скрыть)
@@ -319,3 +320,5 @@ if __name__ == "__main__":
     wait_until_send_time()
     print("Отправляем в Telegram...")
     send_to_telegram("card.png", build_caption(date_str, nbu, best, fuel_date, fuel_avg))
+    track("rates", detail=f"НБУ USD {nbu.get('USD', '—')} · пальне від {best}")
+    commit_posted()

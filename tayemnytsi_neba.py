@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from tayemnytsi_neba_data import ISSUES, SEASON
+from digest_tracker import track, commit_posted
 
 KYIV = ZoneInfo("Europe/Kyiv")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tayemnytsi_neba_state.json")
@@ -116,6 +117,8 @@ def main():
     if not r.ok:
         print(f"[error] Telegram: {r.status_code} {r.text}")
         return 1
+    track("legends", detail=ISSUES[idx]["title"])
+    commit_posted()
     print(f"[ok] опубліковано випуск {idx + 1}: {ISSUES[idx]['title']}")
 
     if not test:

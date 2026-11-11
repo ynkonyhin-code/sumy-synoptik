@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from zabobony_svitu_data import POSTS
+from digest_tracker import track, commit_posted
 
 KYIV = ZoneInfo("Europe/Kyiv")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zabobony_svitu_state.json")
@@ -102,6 +103,8 @@ def main():
     if not r.ok:
         print(f"[error] Telegram: {r.status_code} {r.text}")
         return 1
+    track("omens", detail=POSTS[idx]["name"])
+    commit_posted()
     print(f"[ok] опубліковано випуск №{issue_no}: {POSTS[idx]['name']}")
 
     if not test:

@@ -27,6 +27,11 @@ from zoneinfo import ZoneInfo
 JOURNAL_DIR = Path(__file__).resolve().parent / "journal"
 TZ = ZoneInfo("Europe/Kyiv")
 
+try:                                    # журнал публікацій за розкладом (не критичний)
+    from digest_tracker import TITLES as SCHEDULE_TITLES, read_week as _read_posted_week
+except Exception:                       # noqa: BLE001
+    SCHEDULE_TITLES, _read_posted_week = {}, None
+
 # тип події -> рядок у підсумку (порядок = порядок у пості)
 TYPE_TITLES = {
     "alert": "🚨 Повітряних тривог (Сумський район)",
@@ -196,6 +201,20 @@ def _fmt_dur(sec: float) -> str:
     return f"{h} год {m:02d} хв" if h else f"{m} хв"
 
 
+def schedule_stats(first_day: date, last_day: date, days: int) -> dict:
+    """Скільки днів тижня вийшла кожна рубрика «строго за розкладом» (журнал journal/posted)."""
+    week = _read_posted_week(first_day, last_day) if _read_posted_week else {}
+    rows = []
+    for key, title in SCHEDULE_TITLES.items():
+        n = sum(1 for day in week.values() if key in day)
+        rows.append({"key": key, "title": title, "days": n, "total": days})
+    # рубрики, які жодного разу не вийшли, у підсумку не показуємо:
+    # журнал заповнюється з моменту впровадження, і «0 з 7» за весь канал було б неправдою
+    rows = [r for r in rows if r["days"] > 0]
+    rows.sort(key=lambda r: (-r["days"], list(SCHEDULE_TITLES).index(r["key"])))
+    return {"rows": rows, "days": days}
+
+
 def weekly_digest(last_day: date | None = None, days: int = 7) -> str:
     """Підсумок за `days` повних діб, що закінчуються last_day (за замовчуванням вчора)."""
     last_day = last_day or (kyiv_now().date() - timedelta(days=1))
@@ -207,6 +226,17 @@ def weekly_digest(last_day: date | None = None, days: int = 7) -> str:
     weather = _read_weather(first_day, last_day)
 
     lines = [f"📊 <b>Підсумок тижня</b> ({first_day:%d.%m}–{last_day:%d.%m})", ""]
+
+    schedule = schedule_stats(first_day, last_day, days)
+    if schedule["rows"]:
+        lines.append("🗓 <b>Виходило за розкладом</b>")
+        for row in schedule["rows"]:
+            mark = "✅" if row["days"] >= days else ("⚠️" if row["days"] >= days - 2 else "❗️")
+            lines.append(f"{mark} {row['title']}: {row['days']} з {days}")
+        missing = [r["title"] for r in schedule["rows"] if r["days"] == 0]
+        if missing:
+            lines.append(f"<i>Не виходило жодного дня: {', '.join(missing)}</i>")
+        lines.append("")
 
     hot = [r for r in weather if r[1] is not None]
     cold = [r for r in weather if r[2] is not None]

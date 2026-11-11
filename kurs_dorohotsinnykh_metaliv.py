@@ -35,6 +35,8 @@ import requests
 from bs4 import BeautifulSoup
 
 from kurs_dorohotsinnykh_metaliv_card import fmt_money, render_card
+from publish_window import in_window, window_note
+from digest_tracker import track, commit_posted
 
 # ── Налаштування ───────────────────────────────────────────────────────────
 TZ = ZoneInfo("Europe/Kyiv")
@@ -309,7 +311,7 @@ def main() -> int:
     now = datetime.now(TZ)
     # Cron у GitHub працює в UTC, тому запускається двічі (літній/зимовий час);
     # публікуємо лише коли у Києві справді 11:xx.
-    if not force and not args.dry_run and now.hour != POST_HOUR:
+    if not force and not in_window(POST_HOUR) and not args.dry_run:
         log.info("У Києві зараз %s — не час публікації, вихід.", now.strftime("%H:%M"))
         return 0
 
@@ -327,6 +329,13 @@ def main() -> int:
         log.error("Не задано BOT_TOKEN / CHAT_ID")
         return 1
     publish(token, chat_id, CARD_PATH, text)
+    gold = ""
+    try:
+        gold = f"XAU {data['nbu']['XAU']['per_gram']:.2f} грн/г"
+    except Exception:
+        pass
+    track("metals", detail=gold)
+    commit_posted()
     log.info("Опубліковано.")
     return 0
 

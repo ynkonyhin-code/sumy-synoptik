@@ -23,6 +23,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import requests
+from digest_tracker import track, commit_posted
 
 LAT, LON = 50.9077, 34.7981   # Суми
 YEARS = 35                    # глибина статистики, років
@@ -214,6 +215,8 @@ def main():
         print(caption)
         return
     send_photo(a.out, caption)
+    track("weather_day", detail=f"{day:02d}.{month:02d}")
+    commit_posted()
 
 
 if __name__ == "__main__":

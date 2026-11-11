@@ -26,6 +26,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import requests
+from publish_window import in_window, window_note
+from digest_tracker import track, commit_posted
 
 TZ = ZoneInfo("Europe/Kyiv")
 SEND_HOUR = 7                       # локальна година відправки
@@ -714,8 +716,8 @@ def send_text(text, token, chat_id):
 def main():
     now = datetime.now(TZ)
     # Страховка від переходу на літній/зимовий час: workflow спрацьовує у два UTC-слоти
-    if os.getenv("FORCE") != "1" and not DRY_RUN and now.hour != SEND_HOUR:
-        print(f"Зараз {now:%H:%M} за Києвом, не {SEND_HOUR}:00 — пропуск.")
+    if os.getenv("FORCE") != "1" and not DRY_RUN and not in_window(SEND_HOUR):
+        print(window_note(SEND_HOUR))
         return 0
 
     key = os.environ["TOMORROW_API_KEY"]
@@ -775,12 +777,16 @@ def main():
     if png_a and png_b:
         try:
             send_album(png_a, png_b, caption, token, chat)
+            track("tomorrow")
+            commit_posted()
             print("Надіслано (альбом).")
             return 0
         except Exception as e:
             print(f"⚠ Не вдалося надіслати картинки: {e}. Надсилаємо текстом.", file=sys.stderr)
 
     send_text(build_text_fallback(days, dates, cities, tags), token, chat)
+    track("tomorrow")
+    commit_posted()
     print("Надіслано (текст).")
     return 0
 

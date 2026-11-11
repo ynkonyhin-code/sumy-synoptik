@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import shchodennyy_kalendar_data as D
+from digest_tracker import track, commit_posted
 
 # ── Налаштування ─────────────────────────────────────────────────────────────
 TZ = ZoneInfo("Europe/Kyiv")
@@ -446,6 +447,8 @@ def main() -> int:
             print(f"⚠️  Фото не надіслано ({exc}). Публікую лише текст.", file=sys.stderr)
             print(f"::warning title=Фото календаря не надіслано::{exc}")
     send_message(token, chat_id, text)
+    track("kalendar", detail=d.strftime("%d.%m.%Y"))
+    commit_posted()
     print(f"✅ Опубліковано календар на {d.isoformat()}")
     return 0
 

@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from yak_pratsyuye_pohoda_data import ISSUES, SEASON
+from digest_tracker import track, commit_posted
 
 KYIV = ZoneInfo("Europe/Kyiv")
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yak_pratsyuye_pohoda_state.json")
@@ -161,6 +162,8 @@ def main():
     else:
         api(token, "sendMessage", data={"chat_id": chat, "text": caption + "\n\n" + text, "parse_mode": "HTML",
                                          "disable_web_page_preview": True})
+    track("how_weather", detail=ISSUES[idx]["title"])
+    commit_posted()
     print(f"[ok] випуск {idx + 1}: {ISSUES[idx]['title']} → чат {'тестовий' if chat != channel else 'канал'}")
 
     if not test:

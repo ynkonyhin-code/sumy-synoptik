@@ -9,6 +9,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
+from digest_tracker import track, commit_posted
 
 # ============================================================
 # СУМЩИНА — ЗВЕДЕННЯ ПРОГНОЗУ ПО ОБЛАСТІ (WeatherAPI.com)
@@ -592,6 +593,8 @@ if send_text_separately:
 
 print()
 print("=" * 40)
+track("oblast")
+commit_posted()
 print("  ЗВЕДЕННЯ ПО ОБЛАСТІ ОПУБЛІКОВАНО!")
 print("=" * 40)
 print(f"Канал: {CHANNEL}")

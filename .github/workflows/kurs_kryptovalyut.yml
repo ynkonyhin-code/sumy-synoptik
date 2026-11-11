@@ -1,5 +1,8 @@
 name: Курс криптовалют
 
+permissions:
+  contents: write     # збереження журналу публікацій
+
 on:
   schedule:
     # Cron працює в UTC. 09:05 UTC = 12:05 Київ (літо), 10:05 UTC = 12:05 Київ (зима).
@@ -37,3 +40,18 @@ jobs:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
           FORCE_RUN: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python kurs_kryptovalyut.py
+
+      - name: Зберегти журнал публікацій (для «Підсумку тижня»)
+        if: always()
+        continue-on-error: true
+        run: |
+          git config user.name "synoptic-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add journal/posted 2>/dev/null || exit 0
+          git diff --cached --quiet -- journal/posted && exit 0
+          git commit -m "journal: posted $(TZ=Europe/Kyiv date +%F)" -- journal/posted || exit 0
+          for i in 1 2 3; do
+            git push && break
+            git pull --rebase --autostash || git rebase --abort
+            sleep 3
+          done
