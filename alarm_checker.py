@@ -319,8 +319,8 @@ def build_caption(group):
         footer = f"🔗 Джерело: <a href='{CHANNEL_LINK}'>{CHANNEL_NAME}</a> · {HASHTAGS.get(level, '#Суми #Сумщина')}"
     if level == "OTHER":
         text = html.escape(group["text"])
-        if len(text) > 750:
-            text = text[:750] + "…"
+        if len(text) > 750:                     # різати ТІЛЬКИ до екранування, інакше рветься &amp;
+            text = html.escape(group["text"][:750]) + "…"
         return f"{text}\n{footer}"
 
     lines = [HEADLINES[level].format(who=phrase([HOME_DISTRICT]))]
