@@ -119,14 +119,15 @@ def render_card(data: dict, out_path: str = "digest.png") -> str:
     # ── виходило за розкладом ────────────────────────────────────────────
     rows = data.get("rows", [])
     total_days = data.get("days", 7)
-    height = 92 + max(len(rows), 1) * 44
+    height = (92 + max(len(rows), 1) * 44) if rows else 148
     _panel(img, (pad, y, W - pad, y + height))
     d = ImageDraw.Draw(img)
     _t(d, (pad + 28, y + 20), "ВИХОДИЛО ЗА РОЗКЛАДОМ", _font(22, True), GOLD)
     _right(d, W - pad - 28, y + 22, f"днів тижня: {total_days}", _font(20), MUTED)
     ry = y + 62
     if not rows:
-        _t(d, (pad + 28, ry), "Журнал публікацій порожній", _font(24), MUTED)
+        _t(d, (pad + 28, ry), "Журнал публікацій ще порожній", _font(23), MUTED)
+        _t(d, (pad + 28, ry + 32), "Заповнюється з наступного виходу постів", _font(20), MUTED)
     for r in rows:
         pct = r["days"] / max(total_days, 1)
         col = GREEN if pct >= 0.99 else (AMBER if pct >= 0.7 else RED)
