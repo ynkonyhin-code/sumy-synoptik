@@ -225,6 +225,7 @@ def analyze_city(name, data):
         "tmax": round(max(temps)),
         "wind_max": wind_max,
         "gust_max": max(gust_max, wind_max),      # порыв не может быть слабее ветра
+        "chance": int(max(chances)) if chances else 0,   # «Опади: …(89%)» в подписи и на картинке
         "precip_mm": precip_mm,
         "category": category,
         "text": CATEGORY_TEXT[category],
@@ -304,7 +305,7 @@ def period_summary(start, end):
                 continue
             temps.append(h["temp_c"])
             cats.append(classify(h["condition"]["code"])[0])
-            chances.append(max(h.get("chance_of_rain", 0), h.get("chance_of_snow", 0)))
+            chances.append(max(h.get("chance_of_rain") or 0, h.get("chance_of_snow") or 0))
     if not temps:
         return None
     category = dominant_category(cats)
