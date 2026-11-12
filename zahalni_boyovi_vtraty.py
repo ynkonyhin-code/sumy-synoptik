@@ -175,19 +175,44 @@ def tg_call(method: str, data=None, files=None) -> dict:
     raise RuntimeError(f"{method}: превышено число попыток")
 
 
+def _normalize_image(raw: bytes) -> bytes:
+    """Перекодовуємо у звичайний JPEG/PNG.
+
+    t.me віддає .webp із розширенням .jpg — Telegram такий файл не приймає
+    (400 IMAGE_PROCESS_FAILED), і сводка не виходила зовсім.
+    """
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(io.BytesIO(raw))
+        im = im.convert("RGB")
+        if max(im.size) > 2560:                  # великі зведення — зменшуємо
+            im.thumbnail((2560, 2560), Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=92)
+        return out.getvalue()
+    except Exception as e:
+        print(f"  не вдалося перекодувати картинку ({type(e).__name__}) — надсилаємо як є")
+        return raw
+
+
 def send_post(text: str, tags: str, photo_url) -> None:
     full = f"{text}\n\n{tags}" if text else tags
 
     if photo_url:
-        img = requests.get(photo_url, headers=HEADERS, timeout=60)
-        img.raise_for_status()
-        fits = len(full) <= CAPTION_LIMIT
-        data = {"chat_id": CHAT_ID}
-        if fits:
-            data["caption"] = full
-        tg_call("sendPhoto", data, files={"photo": ("photo.jpg", img.content)})
-        if fits:
-            return
+        try:
+            img = requests.get(photo_url, headers=HEADERS, timeout=60)
+            img.raise_for_status()
+            raw = _normalize_image(img.content)
+            fits = len(full) <= CAPTION_LIMIT
+            data = {"chat_id": CHAT_ID}
+            if fits:
+                data["caption"] = full
+            tg_call("sendPhoto", data, files={"photo": ("photo.jpg", raw)})
+            if fits:
+                return
+        except Exception as e:
+            print(f"  картинку надіслати не вдалося ({e}) — публікуємо текстом")
     # нет картинки или текст не помещается в подпись – отдельное сообщение
     tg_call("sendMessage", {
         "chat_id": CHAT_ID,
