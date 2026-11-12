@@ -73,7 +73,7 @@ MODES = {
         "header": "🌙 <b>ВЕЧІР, НІЧ ТА ЗАВТРА</b>",
         "title": "Прогноз від {d0}",
         "image_title": "Вечір, ніч та завтра",
-        "label": "Завтра",
+        "label": "Далі",          # вечір уже минув або от-от мине — головне в пості «далі»
         "palette": ("#1E2A5E", "#6B3FA0"),
         "blocks": [
             (0, "🌆", "ВЕЧІР", 18, 24, None),
@@ -271,7 +271,12 @@ def make_period(indices, icon, name, start_hour, end_hour, section):
         return None
 
     first_hour = parsed_times[indices[0]].hour
-    code = Counter(codes).most_common(1)[0][0]
+    # Опис періоду: один дощовий час із шести не робить весь блок «Невеликий дощ».
+    # Значущі коди (опади, туман, гроза) беремо, лише якщо тримаються 2+ годин.
+    counts = Counter(codes)
+    significant = [(n, c) for c, n in counts.items()
+                   if c not in (0, 1, 2, 3) and (n >= 2 or c in STORM_CODES)]
+    code = max(significant)[1] if significant else counts.most_common(1)[0][0]
     weather = WEATHER_CODES.get(code, "Змінна погода")
     wind_max = round(max(wind))
 
@@ -356,7 +361,7 @@ if not periods:
 
 def build_summary():
     used = [p for p in periods if p["section"]] or periods
-    label = config["label"] if used is not periods or mode != "evening" else "Далі"
+    label = config["label"]
     all_codes = {c for p in periods for c in p["codes"]}
 
     tmin = min(p["temp_min"] for p in used)

@@ -79,8 +79,8 @@ def fetch_forecast(sat, timeout=20):
             "code": int(d["weather_code"][i]), "tmax": d["temperature_2m_max"][i],
             "tmin": d["temperature_2m_min"][i], "precip": d["precipitation_sum"][i] or 0,
             "pprob": d["precipitation_probability_max"][i] or 0,
-            "wind": d["wind_speed_10m_max"][i], "gust": d["wind_gusts_10m_max"][i],
-            "wdir": d["wind_direction_10m_dominant"][i],
+            "wind": d["wind_speed_10m_max"][i] or 0, "gust": d["wind_gusts_10m_max"][i] or 0,
+            "wdir": d["wind_direction_10m_dominant"][i] or 0,
             "sunrise": d["sunrise"][i][11:16], "sunset": d["sunset"][i][11:16],
             "morning": at(9), "noon": at(15), "evening": at(21),
         }
@@ -122,6 +122,9 @@ def wind_dir(deg):
 
 def advice(days):
     """Список порад (до двох) на основі прогнозу."""
+    days = {d: x for d, x in days.items() if d.weekday() in DAYS}
+    if len(days) < 2:
+        return []
     sat, sun = sorted(days)
     a, b = days[sat], days[sun]
     tips = []
@@ -152,6 +155,7 @@ def advice(days):
 
 
 def caption(days):
+    days = {d: x for d, x in days.items() if d.weekday() in DAYS}   # лише сб/нд (неділя: сб уже минула)
     lines = ["🗓 <b>Погода на вихідні в Сумах</b>", ""]
     for d in sorted(days):
         x = days[d]
@@ -294,6 +298,9 @@ def draw_day(d, x, y, w, h, day, x_):
 
 
 def render(days, path):
+    days = {d: x for d, x in days.items() if d.weekday() in DAYS}
+    if len(days) < 2:
+        raise RuntimeError("у прогнозі немає обох днів вихідних")
     img = gradient((13, 22, 56), (30, 52, 104))
     d = ImageDraw.Draw(img, "RGBA")
     sat, sun_ = sorted(days)
@@ -327,11 +334,14 @@ def render(days, path):
 
 # ───────────────────────── Telegram, стан, запуск ─────────────────────────
 def weekend_for(today, force):
+    """Найближча субота від сьогодні: у пʼятницю і в будні — наступна, у суботу — сьогодні.
+
+    У неділю раніше давало СЬОГОДНІШНІЙ вікенд (субота минула) — і картка показувала
+    замість двох днів лише неділю та падала на fetch_forecast.
+    """
     wd = today.weekday()
     if wd == 5:
         return today
-    if wd == 6:
-        return today + timedelta(days=6)
     return today + timedelta(days=5 - wd)
 
 
@@ -369,7 +379,7 @@ def main():
         if now.weekday() != 4 or now.hour < POST_HOUR:
             print("[skip] публікація лише в п'ятницю після 17:00 за Києвом")
             return 0
-        if now.hour >= POST_HOUR + 7:      # запізнілий запуск у ніч уже не публікуємо
+        if now.hour >= POST_HOUR + 7:      # після 24:00 п'ятниці вже субота
             print("[skip] занадто пізно — публікація лише ввечері п'ятниці")
             return 0
         if load_state().get("posted_for") == sat.isoformat():
@@ -397,9 +407,8 @@ def main():
         return 1
     if not send(token, chat_id, png, cap):
         return 1
-    if not args.force:
-        with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"posted_for": sat.isoformat(), "at": now.isoformat()}, f, ensure_ascii=False, indent=2)
+    with open(STATE_FILE, "w", encoding="utf-8") as f:   # і після --force: інакше повторний force дублює
+        json.dump({"posted_for": sat.isoformat(), "at": now.isoformat()}, f, ensure_ascii=False, indent=2)
     track("weekend", detail=f"на {sat:%d.%m}")
     commit_posted()
     print("[ok] опубліковано")

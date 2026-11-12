@@ -5,7 +5,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from PIL import Image, ImageDraw, ImageFont
@@ -171,7 +171,7 @@ def fetch_city(name, lat, lon):
     params = {
         "key": WEATHERAPI_KEY,
         "q": f"{lat},{lon}",
-        "days": 1,
+        "days": 2,          # прогноз на 2 доби: увечері потрібна ніч наступної доби
         "aqi": "no",
         "alerts": "no",
     }
@@ -188,36 +188,43 @@ def fetch_city(name, lat, lon):
 
 
 def hours_of(data):
+    """Все почасовое за все дни ответа (2 доби), а не только первая."""
     hours = []
-    for h in data["forecast"]["forecastday"][0]["hour"]:
-        dt = datetime.strptime(h["time"], "%Y-%m-%d %H:%M")
-        hours.append((dt, h))
+    for day_data in data["forecast"]["forecastday"]:
+        for h in day_data["hour"]:
+            dt = datetime.strptime(h["time"], "%Y-%m-%d %H:%M")
+            hours.append((dt, h))
     return hours
 
 
 def analyze_city(name, data):
+    # «Доба» — з 06:00 до 06:00 наступного дня: вечірній блок іде в ніч, а не «зникає» о 00:00.
+    # (Раніше брали 06:00–24:00, і після опівночі всі блоки порожніли — пост не виходив зовсім.)
+    today = datetime.now(ZoneInfo(TIMEZONE)).date()
     all_hours = hours_of(data)
-    # «Весь день» — з 06:00 до кінця доби
-    day = [(dt, h) for dt, h in all_hours if dt.hour >= 6]
+    day = [(dt, h) for dt, h in all_hours
+           if (dt.date() == today and dt.hour >= 6)
+           or (dt.date() == today + timedelta(days=1) and dt.hour < 6)]
     if not day:
         return None
 
     temps = [h["temp_c"] for _, h in day]
     winds = [h["wind_kph"] / 3.6 for _, h in day]
-    gusts = [h.get("gust_kph", h["wind_kph"]) / 3.6 for _, h in day]
-    chances = [max(h.get("chance_of_rain", 0), h.get("chance_of_snow", 0)) for _, h in day]
+    gusts = [(h.get("gust_kph") or h["wind_kph"]) / 3.6 for _, h in day]
+    chances = [max(h.get("chance_of_rain") or 0, h.get("chance_of_snow") or 0) for _, h in day]
     precip_mm = sum(h.get("precip_mm", 0) or 0 for _, h in day)
     categories = [classify(h["condition"]["code"])[0] for _, h in day]
 
     category = dominant_category(categories)
 
+    wind_max = round(max(winds))
+    gust_max = round(max(gusts))
     return {
         "name": name,
         "tmin": round(min(temps)),
         "tmax": round(max(temps)),
-        "wind_max": round(max(winds)),
-        "gust_max": round(max(gusts)),
-        "chance": int(max(chances)),
+        "wind_max": wind_max,
+        "gust_max": max(gust_max, wind_max),      # порыв не может быть слабее ветра
         "precip_mm": precip_mm,
         "category": category,
         "text": CATEGORY_TEXT[category],
@@ -245,10 +252,17 @@ if not results:
     print("Не вдалося отримати прогноз жодного міста.")
     raise SystemExit(1)
 
+MIN_CITIES = 3
+if len(results) < MIN_CITIES:
+    # 1–2 міста — це не «зведення по області»; краще не публікувати, ніж дати неправдивий прогноз
+    print(f"ПОМИЛКА: отримано {len(results)} з {len(CITIES)} міст — замало для зведення (треба {MIN_CITIES}+).")
+    raise SystemExit(1)
+
 if len(results) < len(CITIES):
     print(f"Увага: отримано {len(results)} з {len(CITIES)} міст.")
 
 now = datetime.now(ZoneInfo(TIMEZONE))
+now_naive = now.replace(tzinfo=None, minute=0, second=0, microsecond=0)
 date_text = now.strftime("%d.%m.%Y")
 
 
@@ -256,27 +270,41 @@ date_text = now.strftime("%d.%m.%Y")
 # Зведення по області за частинами доби
 # ------------------------------------------------------------
 
+# Блоки доби: останній обов'язково закриває добу (до 6-ї ранку), інакше о 00:00–06:00
+# усі блоки порожні й пост не виходить. Кожен блок ріжеться ще й поточним часом.
 PERIODS = [
     ("🌅", "Ранок", 6, 12),
     ("☀️", "День", 12, 18),
     ("🌆", "Вечір", 18, 24),
+    ("🌙", "Ніч", 0, 6),
 ]
+
+
+def deg(t):
+    """+5°C / −3°C / 0°C (а не +0°C и не -3°C с дефисом)."""
+    if t == 0:
+        return "0°C"
+    return f"{t:+d}°C".replace("-", "−")
 
 
 def temp_range(tmin, tmax):
     if tmin == tmax:
-        return f"{tmin:+d}°C"
-    return f"{tmin:+d}…{tmax:+d}°C"
+        return deg(tmin)
+    return f"{deg(tmin)[:-2]}…{deg(tmax)}"
 
 
 def period_summary(start, end):
+    """Сводка по блоку доби. Прошедшие часы отбрасываем: в 15:00 «Ранок» уже не нужен."""
     temps, cats, chances = [], [], []
     for r in results:
         for dt, h in r["hours"]:
-            if start <= dt.hour < end:
-                temps.append(h["temp_c"])
-                cats.append(classify(h["condition"]["code"])[0])
-                chances.append(max(h.get("chance_of_rain", 0), h.get("chance_of_snow", 0)))
+            if not (start <= dt.hour < end):
+                continue
+            if dt < now_naive:                       # цей час уже минув
+                continue
+            temps.append(h["temp_c"])
+            cats.append(classify(h["condition"]["code"])[0])
+            chances.append(max(h.get("chance_of_rain", 0), h.get("chance_of_snow", 0)))
     if not temps:
         return None
     category = dominant_category(cats)
@@ -318,25 +346,30 @@ rainy = sorted(
     reverse=True,
 )
 if rainy:
-    cities_text = ", ".join(f"{r['name']} ({r['chance']}%)" for r in rainy)
+    cities_text = ", ".join(
+        f"{r['name']} ({r['chance']}%)" if r['chance'] > 0 else f"{r['name']} ({r['precip_mm']:.1f} мм)"
+        for r in rainy)
     lines.append(f"🌧 <b>Опади:</b> {cities_text}")
 else:
     lines.append("🌧 <b>Опади:</b> не очікуються")
 
 windiest = max(results, key=lambda r: r["gust_max"])
-lines.append(
-    f"💨 <b>Вітер:</b> найсильніший — {windiest['name']}, "
-    f"пориви до {windiest['gust_max']} м/с"
-)
+if windiest["gust_max"] == 0:
+    windiest = max(results, key=lambda r: r["wind_max"])
+if windiest["gust_max"] > 0:
+    lines.append(
+        f"💨 <b>Вітер:</b> найсильніший — {windiest['name']}, "
+        f"пориви до {windiest['gust_max']} м/с"
+    )
 
 warmest = max(results, key=lambda r: r["tmax"])
 coldest = min(results, key=lambda r: r["tmax"])
 if warmest["tmax"] == coldest["tmax"]:
-    lines.append(f"🌡 <b>Вдень:</b> до {warmest['tmax']:+d}°C по всій області")
+    lines.append(f"🌡 <b>Вдень:</b> до {deg(warmest['tmax'])} по всій області")
 else:
     lines.append(
-        f"🌡 <b>Найтепліше:</b> {warmest['name']} {warmest['tmax']:+d}°C · "
-        f"<b>найпрохолодніше:</b> {coldest['name']} {coldest['tmax']:+d}°C"
+        f"🌡 <b>Найтепліше:</b> {warmest['name']} {deg(warmest['tmax'])} · "
+        f"<b>найпрохолодніше:</b> {coldest['name']} {deg(coldest['tmax'])}"
     )
 
 lines.append("")

@@ -125,7 +125,7 @@ STATE_FILE = "alarm_state.json"
 MAX_STATE_COMMITS = int(os.getenv("MAX_STATE_COMMITS", "3"))   # обмеження на кількість комітів стану за один запуск
 # тривоги по інших районах беремо з каналу: API підтверджує їх із затримкою, тому пост по району
 # від каналу йде лише тоді, коли API за цей час його не підтвердив (інакше — дубль)
-OTHER_POSTS = os.getenv("OTHER_POSTS", "1") == "1"
+OTHER_POSTS = os.getenv("OTHER_POSTS", "0") == "1"   # окремі пости по районах області (типово ВИМКНЕНО)
 API_SETTLE_MIN = int(os.getenv("API_SETTLE_MIN", "10"))
 LEGACY_FILE = "last_alarm_post_id.txt"   # файл старой версии - используется один раз для миграции
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
