@@ -241,6 +241,9 @@ def main() -> int:
     posts = soup.select(".tgme_widget_message[data-post]")  # порядок: от старых к новым
     key = normalize(KEY_PHRASE)
     now = datetime.now(timezone.utc)
+    # коли останній раз бачили сводку в каналі Генштабу — щоб у звіті було видно,
+    # чи канал порожній, чи ми її просто не впізнали
+    newest_summary = None
     sent = 0
 
     def post_dt(post):
@@ -264,6 +267,8 @@ def main() -> int:
         raw_text = text_div.get_text(" ", strip=True)
         if key not in normalize(raw_text):
             continue
+        if newest_summary is None or post_dt(post) > newest_summary[0]:
+            newest_summary = (post_dt(post), post_id)
         print(f"Знайдено сводку {post_id} ({post_dt(post):%d.%m %H:%M} UTC), в історії: {post_id in posted}")
 
         time_el = post.select_one(".tgme_widget_message_date time")
@@ -307,6 +312,11 @@ def main() -> int:
         print(f"Пост {post_id} успешно опубликован!")
         time.sleep(2)
 
+    if newest_summary:
+        print(f"Остання сводка в каналі Генштабу: {newest_summary[1]} "
+              f"({newest_summary[0]:%d.%m %H:%M} UTC)")
+    else:
+        print("У каналі Генштабу сводок не знайдено взагалі — перевірте розмітку t.me")
     trim_history()
     commit_journal()
     print(f"Готово. Новых публикаций: {sent}")
