@@ -146,6 +146,14 @@ def load_state():
             print(f"Не удалось прочитать {STATE_FILE}: {e}")
     if isinstance(state["active"], list):          # состояние предыдущей версии
         state["active"] = {d: "?" for d in state["active"]}
+    # знімки API теж мусять бути словниками: коли файл пошкоджений або від старішої
+    # версії, там лежить список — і кожен цикл падав з «dictionary update sequence
+    # element #0 has length 12; 2 is required», тобто тривоги не перевірялися взагалі
+    for key in ("active", "hints", "api", "api_prev"):
+        if not isinstance(state.get(key), dict):
+            if state.get(key):
+                print(f"Стан «{key}» пошкоджений ({type(state[key]).__name__}) — скидаю")
+            state[key] = {}
     return state
 
 
@@ -889,7 +897,14 @@ def main():
         try:
             state = poll(state)
         except Exception as e:
-            print(f"Ошибка проверки: {e}")
+            # раніше тут лише друкувалась помилка: якщо вона системна (стан, мережа),
+            # монітор 50 хвилин мовчки нічого не перевіряв. Тепер стан перезавантажуємо
+            # з файлу, щоб наступний цикл ішов із чистого аркуша
+            print(f"Ошибка проверки: {type(e).__name__}: {e}")
+            try:
+                state = load_state()
+            except Exception as e2:
+                print(f"Не вдалося перечитати стан: {e2}")
         if LOOP_MINUTES <= 0 or time.time() + POLL_SECONDS > deadline:
             break
         time.sleep(POLL_SECONDS)
