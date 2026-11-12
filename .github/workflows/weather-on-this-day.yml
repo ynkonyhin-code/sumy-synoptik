@@ -2,7 +2,10 @@ name: Weather on this day
 
 on:
   schedule:
-    - cron: "0 7 * * *"    # 07:00 UTC = 10:00 по Києву літом, 09:00 взимку
+    # 07:00 UTC = 10:00 по Києву літом, 09:00 взимку. GitHub віддає раннер із затримкою
+    # 1–3 години, тож ставимо три слоти: 07/08/09 UTC (09/10/11 за Києвом),
+    # а дублі відсікає кеш weather-on-this-day-<дата>.
+    - cron: "0 7,8,9 * * *"
   workflow_dispatch:
 
 permissions:
@@ -17,11 +20,36 @@ jobs:
         with:
           python-version: "3.x"
       - run: pip install requests matplotlib
+
+      - name: Anti-dup — чи вже виходило сьогодні
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .sent
+          key: weather-on-this-day-${{ github.run_id }}
+          restore-keys: |
+            weather-on-this-day-
+
       - name: Run
+        id: run
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python weather_on_this_day.py
+        run: |
+          if [ -f .sent/done ]; then
+            echo "Сьогодні вже опубліковано — пропускаємо."
+            exit 0
+          fi
+          python weather_on_this_day.py
+          mkdir -p .sent && date -u +%FT%TZ > .sent/done
+
+      - name: Save anti-dup cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .sent
+          key: weather-on-this-day-${{ github.run_id }}
 
       - name: Зберегти журнал публікацій (для «Підсумку тижня»)
         if: always()
