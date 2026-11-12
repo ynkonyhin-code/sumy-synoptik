@@ -890,17 +890,27 @@ def poll_api_plain(state, api_active):
     return state
 
 
+_err_streak = 0
+
+
 def main():
+    global _err_streak
     state = load_state()
     deadline = time.time() + LOOP_MINUTES * 60
     while True:
         try:
             state = poll(state)
+            _err_streak = 0
         except Exception as e:
             # раніше тут лише друкувалась помилка: якщо вона системна (стан, мережа),
             # монітор 50 хвилин мовчки нічого не перевіряв. Тепер стан перезавантажуємо
             # з файлу, щоб наступний цикл ішов із чистого аркуша
+            _err_streak += 1
             print(f"Ошибка проверки: {type(e).__name__}: {e}")
+            if _err_streak >= 3:
+                # тривоги в Сумській області дляться годинами, і якщо монітор «мовчить»
+                # довше — краще побачити це в Actions, ніж дізнатись із каналу
+                print(f"::error::Монітор тривог: {_err_streak} помилок підряд ({type(e).__name__})")
             try:
                 state = load_state()
             except Exception as e2:
