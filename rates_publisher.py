@@ -15,9 +15,12 @@ from digest_tracker import track, commit_posted
 TZ = ZoneInfo("Europe/Kyiv")
 CHANNEL_LINK = "t.me/sumskoy_sinoptik"   # адрес канала, выводится внизу картинки ('' - скрыть)
 SEND_HOUR, SEND_MINUTE = 8, 0        # во сколько (по Киеву) публиковать пост
-MAX_WAIT_MIN = 45                    # максимум, сколько скрипт ждёт до времени публикации
-SLOT_SUMMER = "30 4 * * *"           # 04:30 UTC = 07:30 по Киеву летом (UTC+3)
-SLOT_WINTER = "30 5 * * *"           # 05:30 UTC = 07:30 по Киеву зимой (UTC+2)
+MAX_WAIT_MIN = 120                   # максимум, сколько скрипт ждёт до времени публикации
+# Слоты идут каждые 30 минут (см. workflow). Ждать до 08:00 имеет смысл только слотам,
+# которые стартуют не позже чем за MAX_WAIT_MIN до него, остальные публикуют сразу —
+# иначе пост уехал бы в 10:30 вместо 08:00.
+SLOT_SUMMER = ""                     # (легаси-поля: проверка «свой слот» больше не нужна)
+SLOT_WINTER = ""
 FUEL_FILE = "fuel_prices.json"
 FUEL_URL = "https://outsignal.com/energy/azs/sumy/"   # цены на АЗС Сумской области (обновляются ежедневно)
 FUEL_MAX_AGE_DAYS = 3                # через сколько дней цены на топливо считаются устаревшими
@@ -30,12 +33,13 @@ def is_my_slot(now=None):
     """Автозапуск идёт в двух UTC-слотах (см. workflow). Публикуем только в том слоте,
     который соответствует текущему времени года в Киеве, второй слот пропускается.
     Ручной запуск (переменной SCHEDULE нет) выполняется всегда."""
+    # Публикуем в любом слоте, но не раньше 08:00 по Киеву и только один раз за день
+    # (от повторов защищает кеш rates-<дата> в workflow).
     sched = os.getenv("SCHEDULE", "").strip()
     if not sched:
         return True
     now = now or datetime.datetime.now(TZ)
-    summer = now.utcoffset() == datetime.timedelta(hours=3)
-    return sched == (SLOT_SUMMER if summer else SLOT_WINTER)
+    return (now.hour, now.minute) >= (SEND_HOUR, SEND_MINUTE)
 
 
 def wait_until_send_time():

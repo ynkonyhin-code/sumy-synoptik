@@ -6,10 +6,18 @@ permissions:
 on:
   schedule:
     # Публикация в 08:00 по Киеву круглый год.
-    # Запуск в 07:30 по Киеву: летом (UTC+3) = 04:30 UTC, зимой (UTC+2) = 05:30 UTC.
-    # Скрипт сам выбирает нужный слот, ждёт до 08:00 и публикует; второй слот пропускается.
-    - cron: '30 4 * * *'
-    - cron: '30 5 * * *'
+    # GitHub отдаёт раннер с задержкой 1–3 часа, а «ровно в 08:00» ловилось лишь изредка
+    # (11.11: запуск 08:00 -> 11:59, 10.11 -> 13:40). Теперь слоты идут с шагом 30 минут
+    # с 06:00 до 10:00 UTC (08–12 по Киеву): первый проснувшийся раннер ждёт до 08:00
+    # и публикует, остальные отсекает SCHEDULE-проверка и кеш rates-<дата>.
+    - cron: '30 6 * * *'
+    - cron: '0 7 * * *'
+    - cron: '30 7 * * *'
+    - cron: '0 8 * * *'
+    - cron: '30 8 * * *'
+    - cron: '0 9 * * *'
+    - cron: '30 9 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -38,12 +46,36 @@ jobs:
       - name: Install Playwright Browsers
         run: playwright install --with-deps chromium
 
+      - name: Anti-dup — чи вже виходило сьогодні
+        id: cache
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .sent
+          key: rates-${{ github.run_id }}
+          restore-keys: |
+            rates-
+
       - name: Run Rates Publisher Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SCHEDULE: ${{ github.event.schedule }}
-        run: python rates_publisher.py
+        run: |
+          if [ -n "$SCHEDULE" ] && [ -f .sent/done ]; then
+            echo "Курс і пальне сьогодні вже виходили — пропускаємо."
+            exit 0
+          fi
+          python rates_publisher.py
+          if [ -n "$SCHEDULE" ]; then mkdir -p .sent && date -u +%FT%TZ > .sent/done; fi
+
+      - name: Save anti-dup cache
+        if: always() && github.event_name == 'schedule'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .sent
+          key: rates-${{ github.run_id }}
 
       - name: Зберегти журнал публікацій (для «Підсумку тижня»)
         if: always()

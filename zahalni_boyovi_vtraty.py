@@ -65,7 +65,8 @@ TOPIC_TAGS = [
 # Строки с призывами подписаться / соцсетями удаляются целиком
 JUNK_LINE_RE = re.compile(
     r"підписуйтесь|підписуйтеся|підписатися|підпишіться|приєднуйтесь|приєднуйтеся|"
-    r"слідкуйте|соцмереж|facebook|instagram|youtube|viber|tiktok|telegram|телеграм|"
+    r"підпис\w*\s+на\s+офіційний|офіційний\s+telegram-?канал|"
+    r"слідкуйте|соцмереж|facebook|instagram|youtube|viber|tiktok|"
     r"фейсбук|інстаграм|ютуб|вайбер|twitter|х\.com",
     re.IGNORECASE,
 )
@@ -204,6 +205,7 @@ def main() -> int:
         return 1
 
     posted = set(load_posted_ids())
+    print(f"Історія: {len(posted)} постів уже опубліковано")
 
     res = requests.get(SOURCE_CHANNEL_URL, headers=HEADERS, timeout=30)
     if res.status_code != 200:
@@ -237,12 +239,14 @@ def main() -> int:
         raw_text = text_div.get_text(" ", strip=True)
         if key not in normalize(raw_text):
             continue
+        print(f"Знайдено сводку {post_id} ({post_dt(post):%d.%m %H:%M} UTC), в історії: {post_id in posted}")
 
         time_el = post.select_one(".tgme_widget_message_date time")
         if time_el and time_el.get("datetime"):
             try:
                 dt = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00"))
                 if now - dt > timedelta(hours=MAX_AGE_HOURS):
+                    print(f"  {post_id}: старіше за {MAX_AGE_HOURS} год — пропускаємо")
                     continue
             except ValueError:
                 pass
@@ -250,9 +254,15 @@ def main() -> int:
         photo_url = None
         photo_a = post.select_one("a.tgme_widget_message_photo_wrap")
         if photo_a:
-            m = re.search(r"url\(['\"]?([^'\")]+)['\"]?\)", photo_a.get("style", ""))
-            if m:
-                photo_url = m.group(1)
+            # t.me отдаёт картинку и в href (a.tgme_widget_message_photo_wrap), и в style —
+            # в style лежит превью 640px, а в href полноразмер, поэтому сначала href
+            href = photo_a.get("href") or ""
+            if href.startswith("http"):
+                photo_url = href
+            else:
+                m = re.search(r"url\(['\"]?([^'\")]+)['\"]?\)", photo_a.get("style", ""))
+                if m:
+                    photo_url = m.group(1)
 
         text = extract_clean_text(text_div)
         tags = build_tags(raw_text)
