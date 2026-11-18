@@ -1,9 +1,11 @@
 {
  "done": [
-  "m2"
+  "m2",
+  "morning"
  ],
- "last_post_at": "2026-11-18T03:21:51.283313+02:00",
+ "last_post_at": "2026-11-18T10:42:34.170300+02:00",
  "morning": null,
+ "morning_index": 1,
  "night": "2026-11-17",
  "recent": [
   "phenomenon:Туман"
