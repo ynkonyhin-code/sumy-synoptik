@@ -1,10 +1,12 @@
 {
  "done": [
-  "evening"
+  "evening",
+  "morning"
  ],
  "evening_index": 1,
- "last_post_at": "2026-11-19T02:15:05.950528+02:00",
+ "last_post_at": "2026-11-19T09:39:00.346226+02:00",
  "morning": null,
+ "morning_index": 1,
  "night": "2026-11-18",
  "recent": [],
  "skip": {
