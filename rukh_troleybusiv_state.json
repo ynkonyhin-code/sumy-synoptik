@@ -1,9 +1,9 @@
 {
-  "last_post_id": 7153,
-  "last_status": "restoring",
-  "last_sent_ts": 1795077047.39649,
+  "last_post_id": 7155,
+  "last_status": "delay",
+  "last_sent_ts": 1795148564.8594055,
   "last_variant": {
-    "sad": "storm",
+    "sad": "rain",
     "happy": "spring"
   }
 }
