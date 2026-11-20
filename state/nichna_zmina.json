@@ -1,15 +1,10 @@
 {
- "done": [
-  "evening",
-  "morning"
- ],
- "evening_index": 1,
- "last_post_at": "2026-11-20T09:42:55.244325+02:00",
+ "done": [],
+ "last_post_at": null,
  "morning": null,
- "morning_index": 1,
- "night": "2026-11-19",
+ "night": "2026-11-20",
  "recent": [],
  "skip": {
-  "18:50": "нічого публікувати за розкладом"
+  "18:25": "нічого публікувати за розкладом"
  }
 }
